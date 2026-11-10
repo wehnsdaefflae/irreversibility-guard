@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+audit.jsonl
+
+# internal working files of the routine that produced this repo — not published
+challenge-brief.md
+seed-design.md
+challenge-page-*.html
+challenge-submit-*.html
