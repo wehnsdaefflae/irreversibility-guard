@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .classifier import Classification, Classifier, default_classifier
 from .core import Action, Decision, Verdict
+from .taint import TaintState, effect_of
 
 
 class Dial(IntEnum):
@@ -86,6 +87,9 @@ R_INJECTED_ORIGIN = "deny.instruction_from_untrusted_origin"
 # reason appears on HOLD, REQUIRE_HUMAN and DENY alike.
 R_BATCH = "blocked.irreversible_member_in_batch"
 R_COMPOSITION = "require_human.reversible_steps_compose_irreversibly"
+# an act whose DECLARED undo path does not hold in the world it is about to act on
+# (guard/taint.py:fidelity_risk) — e.g. a "create" onto an already-occupied location.
+R_FIDELITY = "require_human.declared_undo_does_not_hold"
 R_RETRY = "hold.possible_duplicate_of_applied_act"
 R_CONFLICT = "require_human.conflicting_constraints"
 
@@ -97,6 +101,10 @@ class Policy:
     never: tuple[str, ...] = ()        # operator prohibitions, verb prefixes
     require_undo: bool = True
     read_before_destroy: bool = True
+    # how composite irreversibility is found. "derived" = the effect-taint closure in
+    # guard/taint.py (the mechanism); "table" = the original four-row _COMPOSITIONS
+    # blocklist, kept only as the baseline guard/search.py measures against.
+    composition: str = "derived"
 
     def grant(self, verb: str, by: str = "operator") -> "Policy":
         self.capabilities[verb] = Capability(verb, by)
@@ -135,6 +143,9 @@ class Guard:
         self.session = session or Session()
         self.audit_path = Path(audit_path) if audit_path else None
         self.decisions: list[Decision] = []
+        # the effect-taint world model. Every act the guard ALLOWS is folded into it,
+        # and it is what derives composite irreversibility (guard/taint.py).
+        self.taint = TaintState()
 
     # -- helpers ---------------------------------------------------------
     def _decide(self, action: Action, cls: Classification, verdict: Verdict,
@@ -152,14 +163,36 @@ class Guard:
         )
         self.decisions.append(decision)
         self.session.note(verdict.name)
+        # an ALLOWED act really happens: fold it into the effect-taint world so the NEXT
+        # act's composite risk is derived from what this session has already done.
+        # A batch is skipped here — its members were each checked (and recorded) above.
+        if verdict is Verdict.ALLOW and not action.is_batch:
+            qualified = cls.resolved_verb or action.qualified_verb
+            self.taint.record(action, effect_of(qualified, cls.entry))
         if self.audit_path:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)
             with self.audit_path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"ts": time.time(), **decision.to_record()}, sort_keys=True) + "\n")
         return decision
 
-    def _composition_risk(self, action: Action) -> str:
-        """Does this act complete a sequence whose composition is irreversible?"""
+    def _composition_risk(self, action: Action, cls: Classification | None = None) -> str:
+        """Is this act composite-irreversible?
+
+        Default (`Policy.composition == "derived"`): DERIVED by the effect-taint closure
+        in guard/taint.py — content identity, provenance and per-verb effects, so a
+        hazard created several steps earlier on a different location is still found.
+        `"table"` selects the original four-row blocklist below, kept only so
+        guard/search.py can measure the derived mechanism against it.
+        """
+        if self.policy.composition == "derived":
+            entry = cls.entry if cls is not None else None
+            qualified = (cls.resolved_verb if cls is not None and cls.resolved_verb
+                         else action.qualified_verb)
+            return self.taint.composite_risk(action, effect_of(qualified, entry))
+        return self._composition_risk_table(action)
+
+    def _composition_risk_table(self, action: Action) -> str:
+        """The original hard-coded pair table. Baseline only — see the module docstring."""
         history = list(self.session.effects)
         verb = action.qualified_verb
         for steps, why in _COMPOSITIONS:
@@ -221,10 +254,20 @@ class Guard:
 
         # Composition is checked for EVERY act, reversible or not: the dangerous case is
         # precisely a step that looks fine alone and completes an irreversible sequence.
-        risk = self._composition_risk(action)
+        risk = self._composition_risk(action, cls)
         if risk:
             return self._decide(action, cls, Verdict.REQUIRE_HUMAN, R_COMPOSITION,
                                 composition=risk)
+
+        # manifest fidelity: an act declared reversible whose declared undo does not
+        # hold for THIS target (a create onto an occupied location destroys content, and
+        # deleting what was created does not restore it).
+        if self.policy.composition == "derived":
+            qualified = cls.resolved_verb or action.qualified_verb
+            fidelity = self.taint.fidelity_risk(action, effect_of(qualified, cls.entry))
+            if fidelity:
+                return self._decide(action, cls, Verdict.REQUIRE_HUMAN, R_FIDELITY,
+                                    fidelity=fidelity)
 
         if not cls.irreversible:
             if action.verb in ("read", "list", "get", "cat", "show"):

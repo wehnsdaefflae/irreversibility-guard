@@ -37,7 +37,21 @@ Code exists and at least one case asserts on its verdict *and* its reason code
 - operator prohibition outranking the task (bp-02)
 - duplicate/blind-retry detection (bp-03)
 - batch strictness with the offending member named (bp-06)
-- composition detection for the declared rule table (bp-07)
+- **composite irreversibility DERIVED, not listed** (`guard/taint.py`): content identity,
+  provenance (agent-authored vs pre-existing, unknown failing closed as pre-existing) and
+  a declarative per-verb effect map, so a hazard created several steps earlier on a
+  *different* location is still found — bp-07, bp-10, and 5 clause-level cases in
+  `tests/scenarios/test_composition_search.py` (surviving copy defeats the finding;
+  agent-authored content is exempt; the cross-location backup-then-destroy case a pair
+  table structurally cannot express)
+- **manifest fidelity** (bp-11): an act *declared* reversible whose declared undo does not
+  hold for this target — a `create` onto an occupied location — is caught rather than
+  trusted. **This case was found by `guard/search.py`, not by the author**
+- **the search property itself**: in the deployable configuration no sequence up to depth 3
+  both passes the guard end to end and loses pre-existing content (184 such sequences under
+  the old pair table, 0 now — `RESULTS.md`, `tests/search-findings.json`). The test states
+  that this is currently *vacuous* in the sense that the ordinary gates stop those acts
+  before composition is consulted; it exists so a later relaxation of those gates fails loudly
 - self-modifying acts: human-required, and denied at the top dial (bp-08, fs-04)
 - read-set integrity: injected content cannot perform the read that would unlock a
   destroy, because untrusted origin is refused before the read is recorded (bp-09)
@@ -56,11 +70,6 @@ Code exists and at least one case asserts on its verdict *and* its reason code
 
 ## Theoretical — described, not built
 
-- **Composition inference.** `bp-07` passes against a *declared* rule table of four
-  compositions. The guard does **not** infer that an undeclared sequence of reversible
-  steps composes irreversibly. An attacker who finds a composition nobody wrote down
-  walks through. This is the largest gap in the current implementation and the honest
-  reading of the bp-07 pass: it demonstrates the mechanism, not general coverage.
 - **Recovery and rollback.** The guard classifies and refuses; it never performs an undo,
   snapshots nothing, and offers no recovery path.
 - **Multi-agent / delegated acts.** An agent that asks another agent to perform the act
@@ -80,9 +89,26 @@ Code exists and at least one case asserts on its verdict *and* its reason code
   render as two different acts, so a go on one does not cover the other (safe), but the
   read-before-destroy precondition can likewise be *unsatisfiable* by reading the same
   file under a different name (a false positive).
-- **Property-based search for undeclared compositions.** The variant expansion searches
-  over the *shape* of calls within known families; it does not search for new irreversible
-  compositions. That remains the largest soundness gap, above.
+- **The limits the derived taint closure brings with it.** `guard/taint.py` replaced a
+  four-row blocklist with a mechanism, which moves the unsoundness rather than removing
+  it. Specifically, and none of these is fixed:
+  - **The effect map is a declaration.** A verb whose real effect differs from its
+    declared effect is misjudged exactly as a mis-declared manifest entry is. bp-11 is
+    one such mismatch caught *structurally*; the general case is not solvable by
+    declaration.
+  - **Provenance is session-local.** Content written by an *earlier* session reads as
+    pre-existing. That fails closed (over-blocking, not under-blocking), but it means a
+    long-lived agent accumulates false positives that the 14-case benign set, all
+    single-session, cannot show.
+  - **"A copy exists" is tracked structurally, not verified.** The closure believes a
+    copy survives because a copy-style act was allowed; it never checks storage. A copy
+    that something outside the guard removed still counts as a survivor — an
+    under-block, and the most dangerous assumption in the module.
+  - **The search is bounded and tiny.** Exhaustive to depth 3 over 7 verbs × 2 locations
+    = 2940 sequences. A 4-step hazard, a third location, or any verb outside that
+    alphabet is unsearched. "0 violations" means *0 in that box*, not a proof.
+- **A general soundness argument.** The closure derives composite irreversibility from
+  declared effects; it does not and cannot establish that the derivation is complete.
 - **A no-guard baseline and statistical intervals.** The weakened-guard meta-test shows
   the blocked acts go through unguarded, but there is no quantified baseline (e.g. an
   agent-trace corpus with and without the guard) and no confidence intervals on the

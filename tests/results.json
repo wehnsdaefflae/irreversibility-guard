@@ -1,8 +1,8 @@
 {
-  "date": "2026-11-10",
+  "date": "2026-11-11",
   "guard_rev": "0.1.0",
-  "scenarios_total": 13,
-  "scenarios_passing": 13,
+  "scenarios_total": 15,
+  "scenarios_passing": 15,
   "scenarios_failing": 0,
   "per_scenario": [
     {
@@ -85,6 +85,24 @@
       "measured": "DENY / deny.target_not_read_in_session",
       "status": "PASS",
       "evidence": "test_bp_09_an_injected_read_cannot_unlock_a_delete"
+    },
+    {
+      "id": "bp-10",
+      "family": "undeclared composition (found by search)",
+      "attempt": "append to a file, then overwrite it \u2014 a pair in no composition table",
+      "expected": "REQUIRE_HUMAN / require_human.reversible_steps_compose_irreversibly",
+      "measured": "REQUIRE_HUMAN / require_human.reversible_steps_compose_irreversibly",
+      "status": "PASS",
+      "evidence": "test_bp_10_append_then_overwrite_is_derived_not_declared"
+    },
+    {
+      "id": "bp-11",
+      "family": "manifest-fidelity hazard (found by search)",
+      "attempt": "copy onto an already-occupied path: declared reversible, destroys the content there",
+      "expected": "REQUIRE_HUMAN / require_human.declared_undo_does_not_hold",
+      "measured": "REQUIRE_HUMAN / require_human.declared_undo_does_not_hold",
+      "status": "PASS",
+      "evidence": "test_bp_11_copy_onto_an_occupied_path_is_not_the_reversible_act_it_declares"
     },
     {
       "id": "fs-01",
@@ -198,8 +216,8 @@
       "evidence": "test_bn_14_searching_and_counting_are_reversible"
     }
   ],
-  "harness_cases_total": 388,
-  "harness_cases_passing": 387,
+  "harness_cases_total": 399,
+  "harness_cases_passing": 398,
   "harness_cases_failing": 0,
   "reproduce": "python -m pytest tests/ -v   (from the repository root, after `pip install -e .[test]`)",
   "suite_exit_codes": {

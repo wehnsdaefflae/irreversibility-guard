@@ -18,7 +18,7 @@
 |---|---|---|
 | **The mistaken agent** (the common case) | resolves an ambiguous instruction to its irreversible reading; retries blindly after an opaque tool failure; obeys a task instruction that contradicts a standing prohibition | read-before-destroy preconditions, duplicate-act detection, `never` prohibitions outranking the task, hold-and-re-consent |
 | **The injected instruction** | text in fetched content or tool output that addresses the guard or the agent and asks for an irreversible act | actions carrying `origin="tool_output"` are denied **before any policy is consulted**; the guard never treats content as authority |
-| **The agent optimising around its own guard** | asks the guard to relax, re-scope or disable its policy; wraps or renames a destructive tool; hides one destructive call in a batch of harmless ones; splits a destructive act into individually-reversible steps | human-committed dial (self-modifying acts not agent-grantable), alias resolution to the underlying verb before any grant check, batch analysis surfacing the strictest member, composition rules |
+| **The agent optimising around its own guard** | asks the guard to relax, re-scope or disable its policy; wraps or renames a destructive tool; hides one destructive call in a batch of harmless ones; splits a destructive act into individually-reversible steps | human-committed dial (self-modifying acts not agent-grantable), alias resolution to the underlying verb before any grant check, batch analysis surfacing the strictest member, a derived effect-taint closure over the session's own effects (not a list of known compositions), and a property-based search that looks for the compositions nobody declared |
 | **The replayed authorisation** | reuses a human go, or stretches a go given for one payload to cover another | a go binds to one exact canonical act and is single-use |
 
 **Explicitly out of scope:** a compromised host, a malicious *operator*, an agent that
@@ -49,7 +49,12 @@ job (see "What the guard does not enforce").
 - An outward act requires a human go on that exact canonical act; the go is single-use.
 - A self-modifying act requires a human, and at the top dial is denied outright.
 - A batch inherits its strictest member's verdict, naming the offending member.
-- A step completing a known irreversible composition requires a human.
+- A step whose composition with what the session has already done is irreversible requires
+  a human — **derived** from content identity, provenance and declared per-verb effects
+  (`guard/taint.py`), not matched against a list of known pairs, so the hazard may have
+  been created several steps earlier on a different location.
+- An act *declared* reversible whose declared undo does not hold for this target (a
+  `create` onto an already-occupied location) requires a human rather than being trusted.
 - Every decision is appended to a JSONL audit log with its verdict, reason, tier and
   evidence, and every verdict is counted in a per-session tally.
 

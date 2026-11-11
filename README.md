@@ -18,11 +18,16 @@ machine-readable reason code and a structured decision record.
 
 ## Status
 
-Measured, not asserted: **13 of 13 hostile/failure scenarios blocked for the right
+Measured, not asserted: **15 of 15 hostile/failure scenarios blocked for the right
 reason**; each one additionally expanded into variants over tools, targets, argument
-shapes, alias-chain depths and batch positions for **387 of 388 harness cases passing**
+shapes, alias-chain depths and batch positions for **398 of 399 harness cases passing**
 (1 skipped by design); **0 of 14 benign control actions blocked — false-positive rate
-0.000**; 29 unit tests. The numbers in [`RESULTS.md`](RESULTS.md) are generated from the
+0.000**; **427 tests green in total**. Two of the fifteen scenarios (`bp-10`, `bp-11`) were
+**found by the project's own property-based search**, not written by hand: `python -m
+guard.search --depth 3` runs all 2940 action sequences over 7 verbs × 2 locations against a
+world model that does not import the guard, and reports **184 content-losing sequences
+under the original hard-coded composition table and 0 under the derived effect-taint
+closure**. The numbers in [`RESULTS.md`](RESULTS.md) are generated from the
 suites themselves. The honest account of what is *not* covered — including why a
 14-action control set is weak evidence and where an attacker still walks through — is in
 [`LIMITATIONS.md`](LIMITATIONS.md) and [`THREAT_MODEL.md`](THREAT_MODEL.md).
@@ -38,8 +43,9 @@ cd irreversibility-guard
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[test]'
 
-python -m pytest tests/ -v      # 416 cases: 29 unit, 13 scenarios + their variants, 14 benign
+python -m pytest tests/ -v      # 427 passed, 1 skipped: unit, 15 scenarios + variants, 14 benign
 python demo.py                  # a 30-second walk through five interceptions
+python -m guard.search --depth 3   # the property-based search, re-run from scratch
 ```
 
 `demo.py` prints exactly this (nothing is executed — every act is only *proposed*):
@@ -98,7 +104,9 @@ c.alias("housekeeping:tidy", "fs:delete")   # a wrapper reaching a destructive v
 | **Hold and re-consent** | an irreversible act is suspended and re-presented; the agent must re-emit *that exact act* to proceed, and every hold is counted in an evidence tally that makes the guard's false-positive cost measurable | partly |
 | **Human-committed approval dials** | at the top dial a self-modifying act (changing the guard's own policy, config or code) is not agent-grantable **at all** — not even with a go in the session | yes (structural) |
 | **Batch analysis** | an irreversible act hidden inside a batch of reversible ones, at any position and nesting depth — the batch inherits its strictest member's verdict | yes (structural) |
-| **Composition analysis** | a sequence of individually-reversible steps whose composition destroys (append→truncate, write→delete) — **against a declared table of four compositions, not by inference**: a composition nobody wrote down is not caught (see `LIMITATIONS.md`) | no |
+| **Composition analysis** | a sequence of individually-reversible steps whose composition destroys — **derived** by an effect-taint closure over content identity, provenance and declared per-verb effects (`guard/taint.py`), not matched against a list, so a hazard created several steps earlier on a *different* location is caught too | no |
+| **Manifest fidelity** | an act *declared* reversible whose declared undo does not hold for this target — a `create` onto an already-occupied location destroys what was there, and deleting the copy does not restore it (`bp-11`, **found by the search, not by the author**) | no |
+| **Property-based search** | `python -m guard.search --depth 3` exhaustively searches action sequences against a concrete world model that does not import the guard, and reports any sequence the guard allowed end to end that still lost pre-existing content: **184 such sequences under the old pair table, 0 under the derived closure** (`RESULTS.md`). The search is bounded to that alphabet — see `LIMITATIONS.md` for what "0" does and does not mean | no |
 
 Two further properties worth naming: a human **go binds to one exact canonical act and
 is single-use**, so a go on `link=repo-a` does not authorise `link=repo-b` and cannot be
@@ -122,7 +130,10 @@ would destroy; and approval dials making self-modifying acts human-committed onl
 ```
 guard/            the library: core.py (canonical form, decision record),
                   classifier.py (tiered reversibility), policy.py (enforcement)
-tests/            test_unit.py · tests/scenarios/ (bp-01..bp-08, fs-01..fs-04)
+guard/taint.py    the effect-taint closure: composite irreversibility DERIVED
+guard/search.py   the property-based search (its oracle does not import the guard)
+tests/            test_unit.py · tests/scenarios/ (bp-01..bp-11, fs-01..fs-04,
+                  test_composition_search.py) · tests/search-findings.json (dated)
                   · tests/benign/ (the 14-action control set)
 demo.py           the five interceptions above
 RESULTS.md        the measured table, generated from tests/results.json

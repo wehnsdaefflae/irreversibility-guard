@@ -43,6 +43,7 @@ class ManifestEntry:
     undo: str = ""            # how the act is undone; "" = no undo path
     outward: bool = False     # leaves the trust boundary (mail, publish, spend)
     self_modifying: bool = False  # touches the guard's own policy/config/code
+    effect: str = ""          # optional explicit effect for guard.taint (see taint.EFFECTS)
 
     def __post_init__(self) -> None:
         if self.reversibility not in (REVERSIBLE, IRREVERSIBLE, UNKNOWN):
@@ -126,6 +127,10 @@ def default_classifier() -> Classifier:
     m("fs:list", ManifestEntry(REVERSIBLE))
     m("fs:write_new", ManifestEntry(REVERSIBLE, undo="delete the created file"))
     m("fs:append", ManifestEntry(REVERSIBLE, undo="truncate to the recorded length"))
+    # a copy CREATES a second location holding the same content version. Declared
+    # explicitly because guard/taint.py needs it: a copy is how recoverability is
+    # restored, so leaving it undeclared (fail-closed) makes the safe act the hard one.
+    m("fs:copy", ManifestEntry(REVERSIBLE, undo="delete the copy", effect="create"))
     m("fs:overwrite", ManifestEntry(IRREVERSIBLE))
     m("fs:truncate", ManifestEntry(IRREVERSIBLE))
     m("fs:delete", ManifestEntry(IRREVERSIBLE))

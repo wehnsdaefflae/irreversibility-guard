@@ -10,3 +10,8 @@ challenge-brief.md
 seed-design.md
 challenge-page-*.html
 challenge-submit-*.html
+# the submission receipt and packet carry the operator's email address (flagged by
+# scripts/screen_tree.py). They are evidence for the routine, never for the public repo:
+# without these lines a `git add -A` would publish a personal address.
+submission-receipt-*
+submission-packet.md
