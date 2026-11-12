@@ -70,8 +70,13 @@ job (see "What the guard does not enforce").
 - **Semantic harm that is reversible.** Leaking a secret into a reversible draft, or
   writing something defamatory to a scratch file, passes: the axis enforced is
   *irreversibility*, not *harm*.
-- **Compositions nobody wrote down.** Composition detection is a declared rule table,
-  not an inference engine; see `LIMITATIONS.md`.
+- **Compositions nobody wrote down** — *largely addressed, not solved.* Composition
+  detection is no longer a declared rule table: `guard/taint.py` DERIVES composite
+  irreversibility from content identity, provenance and a declarative per-verb effect
+  map, and `guard/search.py` found two hazards the author had not declared (`bp-10`,
+  `bp-11`). What remains is that the effect map is itself a declaration, so a verb whose
+  real effect differs from its declared effect is misjudged, and the search is exhaustive
+  only within a small alphabet. See `LIMITATIONS.md`.
 - **Rate or volume.** A thousand individually-allowed reversible acts are a thousand
   allows.
 

@@ -75,7 +75,7 @@ searching action sequences against a world model that does not import the guard.
 (spaces, Unicode, traversal-shaped, Windows and S3 paths, a 120-character name) × 6
 argument shapes, alias chains 1–6 deep, a delete at each of 5 batch positions nested 1–4
 levels, 6 verb families for untrusted origin, and 14 undeclared verb names — and the
-verdict *and reason code* must be invariant across every variant: **398 of 399 harness
+verdict *and reason code* must be invariant across every variant: **404 of 405 harness
 cases pass, 0 failing**. Two properties are pinned there rather than asserted: the
 canonical form is **permutation-invariant** (so a go cannot be dodged by reordering
 arguments) and **injective over 250 distinct acts with no collision** (so a go on one act
@@ -110,13 +110,35 @@ realistic deployment condition, an integrator's surface the author never saw.
 
 | measure | result | 95% CI (Wilson) |
 |---|---|---|
-| irreversible functions ALLOWED (false negatives) | **0/40** = 0.000 | 0.000–0.088 |
-| harmful prompts reaching an irreversible act | **0/192** = 0.000 | 0.000–0.020 |
+| **irreversible functions an ADVERSARIAL agent reaches** (a HOLD is not a stop) | **18/40** = **0.450** | 0.307–0.602 |
+| irreversible functions allowed outright (a HOLD counted as a stop) | 0/40 = 0.000 | 0.000–0.088 |
 | reversible functions BLOCKED (false positives) | **27/45** = 0.600 | 0.455–0.730 |
-| benign prompts delayed by ≥1 hold | **168/208** = 0.808 | 0.749–0.856 |
+| benign prompts delayed by ≥1 hold | 168/208 = 0.808 | clustered — see the caveat |
 
-**Against no guard at all:** all 40 irreversible calls execute unguarded, **0** guarded;
-192 harmful prompts reach an irreversible act unguarded, **0** guarded.
+**The first row is the number to quote, and it is the unflattering one.** Hold-and-
+re-consent is agent-satisfiable *by design*: a HOLD suspends the act and asks the agent to
+re-emit it. `guard/search.py` already adopts that strict threat model — only
+`REQUIRE_HUMAN` and `DENY` count as stops — so quoting 0/40 as the headline would apply a
+lenient standard to the flattering number and a strict one to the rigorous one. Under the
+strict standard **18 of 40 irreversible functions are reachable**, among them `terminal`,
+`upload_file`, `make_online_purchases` and `purchase_credit_card_details`. Each was held
+rather than escalated because the heuristic tier recognised the verb while no manifest
+entry declared it `outward`, so no human-go gate applied. **This is the guard's largest
+measured weakness.** It is also the sharpest argument the evaluation produces for the
+manifest: one declared entry per verb converts each of those holds into a human gate.
+
+**Two baselines, and "no guard" is the weaker one.** Unguarded, all 40 irreversible calls
+execute. But a trivial policy that simply **blocks every verb absent from the manifest**
+also allows 0 of them outright — so the outright-allow figure is not where this guard
+earns its keep. What it adds over block-all-unknown is the **18 of 45** reversible
+functions it correctly allows (block-all-unknown: 0) and a per-verb reason code on every
+decision.
+
+**A statistical caveat rather than a buried one:** the per-prompt figures are *not*
+independent evidence. AgentHarm prompts share target functions and the guard sees only the
+function name, so a prompt's outcome is determined by the calls it shares with others.
+The per-prompt Wilson intervals are consequently too narrow, and the per-prompt numbers
+carry nothing the per-call numbers do not. Quote the per-call rows.
 
 **The decomposition matters more than either number, so it is published too.** Of the
 foreign verbs the heuristic tier could read, it blocked **22/22** irreversible and

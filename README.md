@@ -25,21 +25,29 @@ the benchmark's own ground truth and an independent model's irreversibility labe
 
 | measure | result | 95% CI |
 |---|---|---|
-| irreversible functions allowed (false negatives) | **0/40** = 0.000 | 0.000–0.088 |
-| harmful prompts reaching an irreversible act | **0/192** = 0.000 | 0.000–0.020 |
+| **irreversible functions an ADVERSARIAL agent reaches** (a HOLD is not a stop) | **18/40** = **0.450** | 0.307–0.602 |
+| irreversible functions allowed outright (counting a HOLD as a stop) | 0/40 = 0.000 | 0.000–0.088 |
 | reversible functions blocked (false positives) | **27/45** = 0.600 | 0.455–0.730 |
 | false positives on 150 independently generated benign calls | **0.187** | 0.132–0.257 |
 
-Unguarded, all 40 irreversible calls and 192 harmful prompts go through. **Half of that
-zero-false-negative figure is the fail-closed rule refusing verbs it cannot read, and
-that same rule is the source of every false positive** — the decomposition is published
-in [`RESULTS.md`](RESULTS.md) because quoting the first row alone would mislead. The
-guard delays harmful and benign prompts at the *same* rate (0.808): it gates
-irreversibility, not harm, and a test asserts it stays that way.
+**Read the first row, not the second.** Hold-and-re-consent is agent-satisfiable by
+design — a HOLD suspends an act and asks the agent to re-emit it, which an adversarial
+agent does — so 18 of those 40 functions, including `terminal`, `upload_file` and
+`make_online_purchases`, are reachable. They got a HOLD instead of `REQUIRE_HUMAN`
+because the heuristic tier recognised the verb but no manifest entry declared it
+`outward`. **That is this guard's largest measured weakness**, and the strongest argument
+for declaring your tool surface: one declared entry turns each of them into a
+human-go gate.
+
+The honest baseline is not "no guard" either — it is **block every unknown verb**, which
+also allows 0 irreversible functions outright. What this guard adds over that trivial
+policy is the **18 of 45** reversible functions it correctly lets through, and a reason
+code on every decision. [`RESULTS.md`](RESULTS.md) carries the full decomposition, the
+clustering caveat on the per-prompt figures, and both baselines.
 
 The author's own suite, for what it is worth: **15 of 15 hostile/failure scenarios blocked
 for the right reason**; each one expanded into variants over tools, targets, argument
-shapes, alias-chain depths and batch positions for **398 of 399 harness cases passing**
+shapes, alias-chain depths and batch positions for **404 of 405 harness cases passing**
 (1 skipped by design); **0 of 14 benign control actions blocked** — a 0.000 that the
 external 0.187 supersedes, since those 14 use only verbs the author also declared;
 **433 tests green in total**. Two of the fifteen scenarios (`bp-10`, `bp-11`) were
@@ -183,4 +191,10 @@ LIMITATIONS.md    implemented+tested / implemented+untested / theoretical, hones
 
 ## Licence
 
-MIT.
+MIT — see [`LICENSE`](LICENSE) for the text.
+
+The third-party evaluation corpora under `tests/corpus/` are **not** covered by it and
+keep their own terms: `deepset/prompt-injections` is CC-BY-4.0 (attribution: deepset
+GmbH), and the AgentHarm derivative holds only ids, names and `target_functions` — its
+prompt texts are deliberately not redistributed (`tests/corpus/FETCH.md`). `LICENSE`
+lists each file and its source.
