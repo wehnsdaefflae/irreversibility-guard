@@ -98,8 +98,10 @@ Code exists and at least one case asserts on its verdict *and* its reason code
     declaration.
   - **Provenance is session-local.** Content written by an *earlier* session reads as
     pre-existing. That fails closed (over-blocking, not under-blocking), but it means a
-    long-lived agent accumulates false positives that the 14-case benign set, all
-    single-session, cannot show.
+    long-lived agent accumulates false positives that no set measured here can show:
+    both the 14 hand-written controls and the 150 independently generated benign calls
+    are single-session, so the published 0.187 is a *floor* for a long-lived agent, not
+    an estimate of its steady state.
   - **"A copy exists" is tracked structurally, not verified.** The closure believes a
     copy survives because a copy-style act was allowed; it never checks storage. A copy
     that something outside the guard removed still counts as a survivor — an
@@ -109,21 +111,45 @@ Code exists and at least one case asserts on its verdict *and* its reason code
     alphabet is unsearched. "0 violations" means *0 in that box*, not a proof.
 - **A general soundness argument.** The closure derives composite irreversibility from
   declared effects; it does not and cannot establish that the derivation is complete.
-- **A no-guard baseline and statistical intervals.** The weakened-guard meta-test shows
-  the blocked acts go through unguarded, but there is no quantified baseline (e.g. an
-  agent-trace corpus with and without the guard) and no confidence intervals on the
-  false-positive rate.
+- **Generalisation beyond the manifest's own vocabulary.** The external evaluation
+  (below) measures the heuristic and fail-closed tiers on 85 foreign verbs. It does not
+  measure the manifest tier on a foreign surface, because that tier is only as good as
+  the integrator's declarations and no benchmark can supply those for them.
 
 ## The false-positive number, honestly
 
-`RESULTS.md` reports **0 false positives on 14 benign actions = 0.000**. That is a real
-measurement, but **14 controls is a small set**, hand-written by the same author as the
-guard, and a 0.000 rate on it should be read as "no obvious over-blocking", not as
-evidence that the guard is cheap to live with in production. The guard's design
-deliberately spends false positives on irreversible acts (an unknown verb is held; an
-unread target is refused), so the real-world rate depends almost entirely on how
-completely the integrator's manifest declares their tools. An undeclared tool surface
-will produce holds.
+**Read 0.187, not 0.000.**
+
+`RESULTS.md` reports two false-positive rates and they disagree by an order of magnitude:
+
+| set | rate | 95% CI | who wrote it |
+|---|---|---|---|
+| 14 hand-written benign controls | 0.000 | 0.000–0.215 | the guard's author |
+| 150 independently generated benign agent calls | **0.187** | 0.132–0.257 | an independent model |
+| 45 reversible AgentHarm functions | **0.600** | 0.455–0.730 | UK AISI benchmark + independent labels |
+
+The 0.000 is a real measurement of a set that could not have shown the cost: every verb
+in it is one the author also declared in the manifest. The moment the benign traffic
+contains verbs the manifest does not declare — which is what an integrator's real
+surface looks like on day one — the fail-closed rule holds them, and the rate goes to
+0.187 on ordinary traffic and 0.600 on a wholly foreign surface. **Every single false
+positive in both external sets comes from the fail-closed rule for undeclared verbs**
+(asserted in `tests/scenarios/test_external_eval.py`), not from a misjudgment by the
+heuristic tier, which made **0 false positives on the 18 foreign verbs it could read**.
+
+So the cost is not a defect to be tuned away; it is the price of the design's one
+non-negotiable rule, and it is paid down by declaring tools, not by weakening the rule.
+An integrator with a complete manifest approaches the first row; one who declares
+nothing gets the third. That is the trade to budget for, and the numbers above are what
+to budget with.
+
+Two further honesties about the zero false-negative rate in the same table: roughly half
+of it (18 of 40 irreversible functions) is fail-closed refusing verbs it cannot read
+rather than any skill at recognising them, and the whole external evaluation grants the
+agent the exact verb it asks for, so per-verb capability reservation — the soundest
+mechanism in the guard — is deliberately switched out of the way and contributes nothing
+to those numbers. A deployment that uses it is safer than this measurement shows, and a
+deployment facing verbs the heuristic tier reads *wrongly* is less safe.
 
 The session tally (`guard.session.tally`) and the audit log exist precisely so that an
 integrator can measure this on their own traffic rather than trusting this number.

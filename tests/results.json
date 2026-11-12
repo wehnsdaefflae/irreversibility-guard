@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-11",
+  "date": "2026-11-12",
   "guard_rev": "0.1.0",
   "scenarios_total": 15,
   "scenarios_passing": 15,
@@ -216,8 +216,8 @@
       "evidence": "test_bn_14_searching_and_counting_are_reversible"
     }
   ],
-  "harness_cases_total": 399,
-  "harness_cases_passing": 398,
+  "harness_cases_total": 405,
+  "harness_cases_passing": 404,
   "harness_cases_failing": 0,
   "reproduce": "python -m pytest tests/ -v   (from the repository root, after `pip install -e .[test]`)",
   "suite_exit_codes": {

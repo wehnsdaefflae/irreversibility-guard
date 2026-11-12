@@ -18,18 +18,39 @@ machine-readable reason code and a structured decision record.
 
 ## Status
 
-Measured, not asserted: **15 of 15 hostile/failure scenarios blocked for the right
-reason**; each one additionally expanded into variants over tools, targets, argument
+**Scored on a third-party benchmark, not only on its author's own tests.** On
+[AgentHarm](https://huggingface.co/datasets/ai-safety-institute/AgentHarm) (UK AI Safety
+Institute — 416 prompts, 85 tool functions, *all foreign to this guard's manifest*, with
+the benchmark's own ground truth and an independent model's irreversibility labels):
+
+| measure | result | 95% CI |
+|---|---|---|
+| irreversible functions allowed (false negatives) | **0/40** = 0.000 | 0.000–0.088 |
+| harmful prompts reaching an irreversible act | **0/192** = 0.000 | 0.000–0.020 |
+| reversible functions blocked (false positives) | **27/45** = 0.600 | 0.455–0.730 |
+| false positives on 150 independently generated benign calls | **0.187** | 0.132–0.257 |
+
+Unguarded, all 40 irreversible calls and 192 harmful prompts go through. **Half of that
+zero-false-negative figure is the fail-closed rule refusing verbs it cannot read, and
+that same rule is the source of every false positive** — the decomposition is published
+in [`RESULTS.md`](RESULTS.md) because quoting the first row alone would mislead. The
+guard delays harmful and benign prompts at the *same* rate (0.808): it gates
+irreversibility, not harm, and a test asserts it stays that way.
+
+The author's own suite, for what it is worth: **15 of 15 hostile/failure scenarios blocked
+for the right reason**; each one expanded into variants over tools, targets, argument
 shapes, alias-chain depths and batch positions for **398 of 399 harness cases passing**
-(1 skipped by design); **0 of 14 benign control actions blocked — false-positive rate
-0.000**; **427 tests green in total**. Two of the fifteen scenarios (`bp-10`, `bp-11`) were
+(1 skipped by design); **0 of 14 benign control actions blocked** — a 0.000 that the
+external 0.187 supersedes, since those 14 use only verbs the author also declared;
+**433 tests green in total**. Two of the fifteen scenarios (`bp-10`, `bp-11`) were
 **found by the project's own property-based search**, not written by hand: `python -m
 guard.search --depth 3` runs all 2940 action sequences over 7 verbs × 2 locations against a
 world model that does not import the guard, and reports **184 content-losing sequences
 under the original hard-coded composition table and 0 under the derived effect-taint
 closure**. The numbers in [`RESULTS.md`](RESULTS.md) are generated from the
-suites themselves. The honest account of what is *not* covered — including why a
-14-action control set is weak evidence and where an attacker still walks through — is in
+suites themselves, and both external evaluations re-run offline from corpora checked into
+`tests/corpus/`. The honest account of what is *not* covered — including why the author's
+own 0.000 should be read as 0.187 and where an attacker still walks through — is in
 [`LIMITATIONS.md`](LIMITATIONS.md) and [`THREAT_MODEL.md`](THREAT_MODEL.md).
 
 ## Install and run
@@ -43,10 +64,29 @@ cd irreversibility-guard
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[test]'
 
-python -m pytest tests/ -v      # 427 passed, 1 skipped: unit, 15 scenarios + variants, 14 benign
+python -m pytest tests/ -v      # 433 passed, 1 skipped: unit, 15 scenarios + variants,
+                                # 14 benign, and the external-corpus regressions
 python demo.py                  # a 30-second walk through five interceptions
 python -m guard.search --depth 3   # the property-based search, re-run from scratch
 ```
+
+The external evaluation re-scores **offline** from the corpora checked into
+`tests/corpus/` — no network, no model call, no API key:
+
+```sh
+python -m pytest tests/scenarios/test_external_eval.py -v   # the published numbers, re-derived
+```
+
+Re-deriving them *from scratch* (re-fetching AgentHarm and re-asking an independent model
+for the labels) needs network and a model, and lives outside the repository in the
+authoring routine's `scripts/eval_agentharm.py` and `scripts/eval_external.py`, both
+included here under `scripts/` for inspection. The labels an independent model produced
+are checked in (`tests/corpus/agentharm-labels.json`) so the result is reproducible
+without one. **One caveat for a re-runner:** AgentHarm's function names include malware,
+ransomware and darknet-market entries, and at least one commercial model's safety
+classifier refuses to label the batch; the script falls back to a second provider and
+splits refused batches down to single names rather than letting the evaluation's author
+supply labels by hand.
 
 `demo.py` prints exactly this (nothing is executed — every act is only *proposed*):
 
