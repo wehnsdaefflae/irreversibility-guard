@@ -8,7 +8,37 @@ correctly in general. **There will always be an irreversible act this guard fail
 recognise.** Its value is not a proof; it is raising the cost and the visibility of such
 acts, and making the ones it does recognise require a human.
 
-What *is* sound here are the **structural** mechanisms, which decide nothing about intent:
+### What "sound" means in this repository
+
+The word is used in one fixed sense throughout, and it is worth stating because it is
+narrower than it looks:
+
+> A mechanism is **sound** here if its verdict is a decidable property of the call and
+> the session record — so for every input it either holds or it does not, with no
+> judgment about what the act *means* or what the user *intended*. Equivalently: two
+> deployers running the same mechanism on the same call and the same session always get
+> the same verdict, and that verdict can be checked by reading the code and the audit
+> log, without agreeing about intent.
+
+Three things that sense of "sound" does **not** claim, and that no mechanism in this
+repository claims:
+
+1. **Not completeness.** A sound mechanism stops the acts it is *given*. Per-verb
+   reservation stops `mail:send` because someone declared `mail:send` outward; it says
+   nothing about the verb nobody declared.
+2. **Not correctness of the inputs.** Soundness is conditional on what the integrator
+   supplies — the manifest, the never-list, and the `origin` field, none of which the
+   guard can verify. Garbage declarations give sound verdicts about the wrong world.
+3. **Not security against a host-level attacker.** Everything here is in-process advice
+   to a dispatcher. An agent that can write the policy object, patch the module or call
+   the tool directly is outside the model entirely (see `THREAT_MODEL.md`).
+
+So "sound (structural)" in the mechanism table means *decidable and intent-free*, not
+*sufficient*. The classifier tiers are marked unsound because their verdict depends on
+an open-ended judgment about an act's meaning; the structural gates are marked sound
+because theirs does not. Neither marking is a safety guarantee.
+
+What *is* sound in that sense are the **structural** mechanisms, which decide nothing about intent:
 
 - **per-VERB capability reservation** — a grant is a grant on one qualified verb;
 - **read-before-destroy preconditions** — a check on session history, not on meaning;
@@ -28,6 +58,13 @@ Code exists and at least one case asserts on its verdict *and* its reason code
 
 - canonical action rendering, order- and nesting-independent (3 unit cases)
 - manifest / heuristic / unknown tiering, with unknown failing closed (4 unit cases)
+- fail-closed provenance: an irreversible act whose `origin` was never declared is
+  `REQUIRE_HUMAN`, re-consent does not unblock it, a human go does, reversible acts are
+  unaffected, and `trust_undeclared_origin=True` restores the old behaviour (1 unit case,
+  four assertions). What this does **not** do: verify provenance. `origin` is still
+  supplied by the caller, so an integrator who writes `origin="agent"` on content-echoed
+  calls defeats it exactly as before — the change moves the failure from a silent default
+  to a written assertion, which is weaker than a check and stronger than nothing.
 - alias resolution to a fixpoint, including cycles, before grant and classification (bp-05)
 - per-verb capability reservation, wildcard not covering the irreversible verb (3 unit cases)
 - read-before-destroy, refusing then permitting (fs-01, bp-01, bp-05)
@@ -50,8 +87,18 @@ Code exists and at least one case asserts on its verdict *and* its reason code
 - **the search property itself**: in the deployable configuration no sequence up to depth 3
   both passes the guard end to end and loses pre-existing content (184 such sequences under
   the old pair table, 0 now — `RESULTS.md`, `tests/search-findings.json`). The test states
-  that this is currently *vacuous* in the sense that the ordinary gates stop those acts
-  before composition is consulted; it exists so a later relaxation of those gates fails loudly
+  **Two corrections an independent reviewer forced on 2026-11-12, both of which this file
+  previously got wrong:** (1) the test's docstring called the property "vacuous — the
+  ordinary gates stop these acts before composition is consulted", and the findings file
+  refutes that in the same breath: with those same gates ON, table mode reports **184**
+  sequences that pass end to end and lose content. The gates do *not* pre-empt them; the
+  composition mechanism is what accounts for the difference, and the word "vacuous" was
+  simply wrong. (2) The 184 → 0 comparison is **confounded**: `Policy(composition="table")`
+  gates the manifest-fidelity check as well, so selecting it switches off *two* mechanisms,
+  and an unknown share of the 184 is fidelity rather than taint closure — the findings
+  file's own `gates_on` exemplar (`fs:read /data/a ; fs:copy /data/b`) is a fidelity catch.
+  Read 184 → 0 as what the closure **and** the fidelity check buy together; the search
+  does not separate them
 - self-modifying acts: human-required, and denied at the top dial (bp-08, fs-04)
 - read-set integrity: injected content cannot perform the read that would unlock a
   destroy, because untrusted origin is refused before the read is recorded (bp-09)
@@ -144,7 +191,7 @@ nothing gets the third. That is the trade to budget for, and the numbers above a
 to budget with.
 
 Two further honesties about the zero false-negative rate in the same table: roughly half
-of it (18 of 40 irreversible functions) is fail-closed refusing verbs it cannot read
+of it (the 45 verbs no tier could read, among them 18 irreversible ones) is fail-closed refusing verbs it cannot read
 rather than any skill at recognising them, and the whole external evaluation grants the
 agent the exact verb it asks for, so per-verb capability reservation — the soundest
 mechanism in the guard — is deliberately switched out of the way and contributes nothing

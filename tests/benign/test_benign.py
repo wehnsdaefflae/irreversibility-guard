@@ -92,8 +92,10 @@ def test_bn_11_a_wholly_reversible_batch():
 
 def test_bn_12_a_re_consented_irreversible_act_goes_through():
     g = _guard(verbs=["fs:*", "fs:truncate"], require_undo=False, read_before_destroy=False)
-    g.check(Action("fs", "truncate", "/scratch/tmp.log"))           # held once
-    _allowed(g.check(Action("fs", "truncate", "/scratch/tmp.log"), consent=True), "bn-12")
+    # provenance declared: this is the agent re-consenting to its own act
+    g.check(Action("fs", "truncate", "/scratch/tmp.log", origin="agent"))   # held once
+    _allowed(g.check(Action("fs", "truncate", "/scratch/tmp.log", origin="agent"),
+                     consent=True), "bn-12")
 
 
 def test_bn_13_an_outward_act_with_a_genuine_go_goes_through():

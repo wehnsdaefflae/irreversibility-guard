@@ -50,7 +50,7 @@ def _labels() -> dict:
 def _decide_all() -> list[dict]:
     out = []
     for name, lab in sorted(_labels().items()):
-        decision = _granted_guard(name).check(Action("agent", name, ""))
+        decision = _granted_guard(name).check(Action("agent", name, "", origin="agent"))
         out.append({
             "function": name,
             "irreversible": bool(lab["destructive"] or lab["outward"]),
@@ -154,7 +154,7 @@ def test_held_out_benign_traffic_false_positives_are_all_undeclared_verbs():
         if case["tool"] in ("", "none"):
             continue
         decision = _granted_guard(case["verb"], case["tool"]).check(
-            Action(case["tool"], case["verb"], case.get("target", "")))
+            Action(case["tool"], case["verb"], case.get("target", ""), origin="agent"))
         if decision.verdict.blocked and decision.tier == "manifest":
             bad.append((case["id"], decision.canonical, decision.reason))
     assert bad == [], f"declared-verb false positives on benign traffic: {bad}"

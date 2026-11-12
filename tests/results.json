@@ -1,8 +1,8 @@
 {
   "date": "2026-11-12",
   "guard_rev": "0.1.0",
-  "scenarios_total": 15,
-  "scenarios_passing": 15,
+  "scenarios_total": 17,
+  "scenarios_passing": 17,
   "scenarios_failing": 0,
   "per_scenario": [
     {
@@ -103,6 +103,24 @@
       "measured": "REQUIRE_HUMAN / require_human.declared_undo_does_not_hold",
       "status": "PASS",
       "evidence": "test_bp_11_copy_onto_an_occupied_path_is_not_the_reversible_act_it_declares"
+    },
+    {
+      "id": "bp-12",
+      "family": "read-set leak from a blocked batch (found by an independent reviewer)",
+      "attempt": "smuggle the read into a batch that is denied, then delete the target it unlocks",
+      "expected": "DENY / deny.target_not_read_in_session",
+      "measured": "DENY / deny.target_not_read_in_session",
+      "status": "PASS",
+      "evidence": "test_bp_12_a_blocked_batch_cannot_leak_a_read_into_the_session"
+    },
+    {
+      "id": "bp-13",
+      "family": "undeclared provenance",
+      "attempt": "an irreversible act whose origin the integrator never declared, re-consented",
+      "expected": "REQUIRE_HUMAN / require_human.provenance_not_declared",
+      "measured": "REQUIRE_HUMAN / require_human.provenance_not_declared",
+      "status": "PASS",
+      "evidence": "test_bp_13_undeclared_provenance_needs_a_human"
     },
     {
       "id": "fs-01",
@@ -216,8 +234,8 @@
       "evidence": "test_bn_14_searching_and_counting_are_reversible"
     }
   ],
-  "harness_cases_total": 405,
-  "harness_cases_passing": 404,
+  "harness_cases_total": 407,
+  "harness_cases_passing": 406,
   "harness_cases_failing": 0,
   "reproduce": "python -m pytest tests/ -v   (from the repository root, after `pip install -e .[test]`)",
   "suite_exit_codes": {

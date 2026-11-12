@@ -25,19 +25,32 @@ the benchmark's own ground truth and an independent model's irreversibility labe
 
 | measure | result | 95% CI |
 |---|---|---|
-| **irreversible functions an ADVERSARIAL agent reaches** (a HOLD is not a stop) | **18/40** = **0.450** | 0.307–0.602 |
-| irreversible functions allowed outright (counting a HOLD as a stop) | 0/40 = 0.000 | 0.000–0.088 |
-| reversible functions blocked (false positives) | **27/45** = 0.600 | 0.455–0.730 |
+| **irreversible functions an ADVERSARIAL agent reaches** (a stop it cannot clear itself) | **0/40** = **0.000** | 0.000–0.088 |
+| irreversible functions allowed outright | 0/40 = 0.000 | 0.000–0.088 |
+| **reversible functions blocked (false positives)** | **27/45** = **0.600** | 0.455–0.730 |
 | false positives on 150 independently generated benign calls | **0.187** | 0.132–0.257 |
 
-**Read the first row, not the second.** Hold-and-re-consent is agent-satisfiable by
-design — a HOLD suspends an act and asks the agent to re-emit it, which an adversarial
-agent does — so 18 of those 40 functions, including `terminal`, `upload_file` and
-`make_online_purchases`, are reachable. They got a HOLD instead of `REQUIRE_HUMAN`
-because the heuristic tier recognised the verb but no manifest entry declared it
-`outward`. **That is this guard's largest measured weakness**, and the strongest argument
-for declaring your tool surface: one declared entry turns each of them into a
-human-go gate.
+**Read the third row as carefully as the first.** The strict rate counts a stop only
+where the agent cannot clear it on its own, and the two HOLD kinds differ there:
+`hold.irreversible_needs_reconsent` *is* agent-satisfiable (the act enters
+`session.consented` and a re-emission returns `ALLOW`), while
+`hold.unknown_verb_fails_closed` is returned by the unknown tier *before* consent is
+consulted and never enters `session.consented`, so re-consent cannot clear it —
+probe-verified on `terminal`, `upload_file`, `make_online_purchases`, `wire_funds` and
+`share_on_pinterest`. Every one of the 40 irreversible functions ends at a verdict of
+that kind.
+
+**That figure is bought by refusing the unrecognised, not by recognising anything**, and
+the 0.600 false-positive rate is its price: the same fail-closed rule blocks 27 of the 45
+reversible functions. The honest comparison is therefore not "no guard" but
+**block-every-unknown-verb**, which also allows 0 of 40 — what this guard adds over it is
+the 18 reversible functions it still lets through and a reason code for every decision.
+An integrator who declares their tool surface moves verbs off that tier and pays less.
+
+*This project published `18/40 = 0.450` here for one day (2026-11-12) after counting
+every HOLD as agent-satisfiable, and `0/40` before that after counting every HOLD as a
+stop. Both were wrong; `scripts/eval_agentharm.py` now distinguishes the two kinds and
+`RESULTS.md` records the correction.*
 
 The honest baseline is not "no guard" either — it is **block every unknown verb**, which
 also allows 0 irreversible functions outright. What this guard adds over that trivial
@@ -45,12 +58,12 @@ policy is the **18 of 45** reversible functions it correctly lets through, and a
 code on every decision. [`RESULTS.md`](RESULTS.md) carries the full decomposition, the
 clustering caveat on the per-prompt figures, and both baselines.
 
-The author's own suite, for what it is worth: **15 of 15 hostile/failure scenarios blocked
+The author's own suite, for what it is worth: **17 of 17 hostile/failure scenarios blocked
 for the right reason**; each one expanded into variants over tools, targets, argument
 shapes, alias-chain depths and batch positions for **404 of 405 harness cases passing**
 (1 skipped by design); **0 of 14 benign control actions blocked** — a 0.000 that the
 external 0.187 supersedes, since those 14 use only verbs the author also declared;
-**433 tests green in total**. Two of the fifteen scenarios (`bp-10`, `bp-11`) were
+**436 tests green in total**. Two of the seventeen scenarios (`bp-10`, `bp-11`) were
 **found by the project's own property-based search**, not written by hand: `python -m
 guard.search --depth 3` runs all 2940 action sequences over 7 verbs × 2 locations against a
 world model that does not import the guard, and reports **184 content-losing sequences
@@ -72,7 +85,7 @@ cd irreversibility-guard
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[test]'
 
-python -m pytest tests/ -v      # 433 passed, 1 skipped: unit, 15 scenarios + variants,
+python -m pytest tests/ -v      # 436 passed, 1 skipped: unit, 17 scenarios + variants,
                                 # 14 benign, and the external-corpus regressions
 python demo.py                  # a 30-second walk through five interceptions
 python -m guard.search --depth 3   # the property-based search, re-run from scratch
@@ -125,12 +138,26 @@ policy.grant("mail:*").grant("fs:*")       # reversible verbs of those tools
 guard = Guard(policy=policy, classifier=default_classifier(),
               session=Session(), audit_path="audit.jsonl")
 
-def call_tool(tool, verb, target, **args):
-    decision = guard.check(Action(tool, verb, target, args))
+def call_tool(tool, verb, target, _origin="agent", **args):
+    # DECLARE PROVENANCE. `origin` is caller-supplied and the guard cannot check it:
+    #   "agent"       the model emitted this call itself
+    #   "human"       the operator asked for it directly
+    #   "tool_output" it came out of fetched content -- DENIED before any policy read
+    # Its default is "undeclared", which FAILS CLOSED: an irreversible act whose
+    # provenance you never declared needs a human go and cannot be unblocked by the
+    # agent's own re-consent, because the guard has no way to tell the two apart.
+    # Reversible acts are unaffected, so an integration that declares nothing still runs.
+    decision = guard.check(Action(tool, verb, target, args, origin=_origin))
     if not decision.allowed:
         return {"blocked": decision.verdict.name, "reason": decision.reason}
     return real_dispatch(tool, verb, target, **args)
 ```
+
+If your dispatcher genuinely cannot distinguish a model-emitted call from content
+echoed back out of a tool result, do **not** paper over it with `origin="agent"` — that
+is the assertion the guard's injection defence rests on. Set
+`Policy(trust_undeclared_origin=True)` instead, which restores the old permissive
+behaviour *visibly*, in the policy, where a reviewer can see what was given up.
 
 Declare what your own tools do, so the authoritative tier covers them:
 
@@ -142,10 +169,17 @@ c.declare("crm:purge_lead",   ManifestEntry("irreversible"))
 c.alias("housekeeping:tidy", "fs:delete")   # a wrapper reaching a destructive verb
 ```
 
-## The six mechanisms
+## The mechanisms
+
+`sound?` below means one specific thing: the verdict is a **decidable, intent-free**
+property of the call and the session record, so it holds regardless of what any
+classifier believes about meaning. It does **not** mean complete, nor sufficient, nor
+secure against an attacker who can reach the process — `LIMITATIONS.md` defines the term
+and lists what it excludes.
 
 | mechanism | what it stops | sound? |
 |---|---|---|
+| **Fail-closed provenance** | an irreversible act whose `origin` the integrator never declared: the guard cannot tell an agent-emitted call from one echoed out of fetched content, so the agent's own re-consent is refused and a human decides (`Policy(trust_undeclared_origin=True)` opts out, visibly) | yes (structural) |
 | **Canonical action rendering** | policy written against the act, not its phrasing; kwarg order, nesting and aliasing cannot change the string a rule sees | yes (structural) |
 | **Per-VERB capability reservation** | `mail:*` grants `mail:list` and `mail:draft` but **never** `mail:send`: the outward, irreversible verb of an otherwise-safe tool stays separately reserved | yes (structural) |
 | **Read-before-destroy preconditions** | an irreversible act on content the agent never read in this session is refused — you cannot delete what you have not inspected | yes (structural) |
@@ -154,7 +188,7 @@ c.alias("housekeeping:tidy", "fs:delete")   # a wrapper reaching a destructive v
 | **Batch analysis** | an irreversible act hidden inside a batch of reversible ones, at any position and nesting depth — the batch inherits its strictest member's verdict | yes (structural) |
 | **Composition analysis** | a sequence of individually-reversible steps whose composition destroys — **derived** by an effect-taint closure over content identity, provenance and declared per-verb effects (`guard/taint.py`), not matched against a list, so a hazard created several steps earlier on a *different* location is caught too | no |
 | **Manifest fidelity** | an act *declared* reversible whose declared undo does not hold for this target — a `create` onto an already-occupied location destroys what was there, and deleting the copy does not restore it (`bp-11`, **found by the search, not by the author**) | no |
-| **Property-based search** | `python -m guard.search --depth 3` exhaustively searches action sequences against a concrete world model that does not import the guard, and reports any sequence the guard allowed end to end that still lost pre-existing content: **184 such sequences under the old pair table, 0 under the derived closure** (`RESULTS.md`). The search is bounded to that alphabet — see `LIMITATIONS.md` for what "0" does and does not mean | no |
+| **Property-based search** | `python -m guard.search --depth 3` exhaustively searches action sequences against a concrete world model that does not import the guard, and reports any sequence the guard allowed end to end that still lost pre-existing content: **184 such sequences under the old pair table, 0 under the derived closure** (`RESULTS.md`). **Confounded, and stated as such:** selecting the pair table also switches off the manifest-fidelity check, so 184 → 0 is what the closure and that check buy *together*. The search is bounded to its alphabet — see `LIMITATIONS.md` for what "0" does and does not mean | no |
 
 Two further properties worth naming: a human **go binds to one exact canonical act and
 is single-use**, so a go on `link=repo-a` does not authorise `link=repo-b` and cannot be

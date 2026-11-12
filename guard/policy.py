@@ -78,11 +78,23 @@ R_NO_CAPABILITY = "deny.verb_not_granted"
 R_UNKNOWN_VERB = "hold.unknown_verb_fails_closed"
 R_HOLD_IRREVERSIBLE = "hold.irreversible_needs_reconsent"
 R_NEEDS_READ = "deny.target_not_read_in_session"
+# NOTE on the prefix: this code is returned with Verdict.REQUIRE_HUMAN, not DENY, so the
+# `deny.` prefix misdescribes it -- an integrator keying on the prefix would treat a
+# human-gatable act as refused (found by an independent reviewer 2026-11-12). The string
+# is PUBLIC and documented as stable, so it is not renamed; R_NO_UNDO_REQUIRE_HUMAN below
+# is the correctly-prefixed alias, and new code should branch on the verdict, never on a
+# reason code's prefix.
 R_NO_UNDO = "deny.no_undo_path_declared"
+R_NO_UNDO_REQUIRE_HUMAN = R_NO_UNDO   # alias: same string, accurate name
 R_NEEDS_HUMAN = "require_human.outward_act"
 R_SELF_MODIFY = "require_human.self_modifying_act"
 R_SELF_MODIFY_DENIED = "deny.self_modifying_not_agent_grantable"
 R_INJECTED_ORIGIN = "deny.instruction_from_untrusted_origin"
+# an irreversible act whose PROVENANCE was never declared by the integrator. The guard
+# cannot tell an agent-authored call from one echoed out of fetched content, so the
+# agent's own re-consent is not evidence here: only a human go unblocks it. Set
+# Policy(trust_undeclared_origin=True) to opt back into the old permissive default.
+R_UNDECLARED_ORIGIN = "require_human.provenance_not_declared"
 # verdict-neutral on purpose: a batch inherits the STRICTEST member's verdict, so this
 # reason appears on HOLD, REQUIRE_HUMAN and DENY alike.
 R_BATCH = "blocked.irreversible_member_in_batch"
@@ -101,6 +113,11 @@ class Policy:
     never: tuple[str, ...] = ()        # operator prohibitions, verb prefixes
     require_undo: bool = True
     read_before_destroy: bool = True
+    # Whether an act whose `origin` the integrator never declared may be treated as
+    # agent-authored. False (the default) means undeclared provenance fails closed for
+    # IRREVERSIBLE acts: the agent's own re-consent is refused and a human go is needed.
+    # Reversible acts are unaffected, so an integration that declares nothing still runs.
+    trust_undeclared_origin: bool = False
     # how composite irreversibility is found. "derived" = the effect-taint closure in
     # guard/taint.py (the mechanism); "table" = the original four-row _COMPOSITIONS
     # blocklist, kept only as the baseline guard/search.py measures against.
@@ -216,8 +233,22 @@ class Guard:
         # batch: judge members, surface the strictest. An irreversible act cannot
         # hide inside a batch of reversible ones.
         if action.is_batch:
+            # Judging a member must not COMMIT it. A member check records reads and
+            # effects into the session, and a batch that is then blocked executes
+            # nothing -- so without this snapshot a read smuggled into a DENIED batch
+            # still satisfies read-before-destroy for a later delete, turning an
+            # unclearable DENY into an ALLOW. Found by an independent reviewer
+            # 2026-11-12 and scored as bp-12.
+            before_reads = set(self.session.reads)
+            before_effects = list(self.session.effects)
+            before_consented = set(self.session.consented)
             inner = [self.check(m, consent=consent) for m in action.members]
             worst = max(inner, key=lambda d: d.verdict)
+            if worst.verdict is not Verdict.ALLOW:
+                # nothing in this batch runs, so nothing it proposed is evidence
+                self.session.reads = before_reads
+                self.session.effects = before_effects
+                self.session.consented = before_consented
             if worst.verdict is Verdict.ALLOW:
                 return self._decide(action, cls, Verdict.ALLOW, R_ALLOW,
                                     members=[d.to_record() for d in inner])
@@ -313,6 +344,15 @@ class Guard:
         if self.policy.dial is Dial.PERMISSIVE:
             self.session.effects.append(action.canonical())
             return self._decide(action, cls, Verdict.ALLOW, R_ALLOW)
+
+        # provenance fails closed. The hold-and-re-consent path treats the agent's own
+        # re-emission as evidence that the agent authored the act -- which is only
+        # meaningful if the integrator actually tells the guard where a call came from.
+        # When provenance was never declared the guard cannot distinguish agent-authored
+        # from echoed-out-of-content, so re-consent is not accepted and a human decides.
+        if action.origin == "undeclared" and not self.policy.trust_undeclared_origin:
+            return self._decide(action, cls, Verdict.REQUIRE_HUMAN, R_UNDECLARED_ORIGIN,
+                                origin=action.origin)
 
         if consent and action.canonical() in self.session.consented:
             self.session.effects.append(action.canonical())

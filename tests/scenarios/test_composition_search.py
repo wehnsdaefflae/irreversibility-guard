@@ -16,9 +16,14 @@ Two things are asserted here.
 2. **The property itself** — in the DEPLOYABLE configuration (undo path required,
    read-before-destroy on) no sequence up to depth 3 both passes the guard entirely and
    loses pre-existing content, under a threat model where the agent re-consents to its
-   own HOLDs. This is a regression property, not a discovery: it is currently vacuous in
-   the sense that the ordinary gates stop these acts before composition is consulted,
-   and the test says so, so a later relaxation of those gates fails here loudly.
+   own HOLDs. This is a regression property. It is NOT vacuous: with the same ordinary
+   gates on, `Policy(composition="table")` reports 184 sequences that pass end to end and
+   lose pre-existing content, so the gates demonstrably do not pre-empt them (an earlier
+   docstring here claimed they did, contradicting tests/search-findings.json; corrected
+   2026-11-12 after an independent reviewer pointed at both numbers).
+
+   Caveat on that 184 -> 0 figure: selecting "table" also gates OFF the manifest-fidelity
+   check, so the comparison measures the taint closure and the fidelity check together.
 """
 from __future__ import annotations
 
@@ -126,9 +131,11 @@ def test_destroying_the_last_copy_after_deleting_the_backup_is_caught():
     g = _isolated_guard()
     g.check(Action("fs", "read", "/data/a"))
     g.check(Action("fs", "copy", "/backup/a", {"source": "/data/a"}))
-    assert g.check(Action("fs", "delete", "/backup/a")).verdict in (
+    # provenance declared throughout: the sequence under test is agent-authored, and
+    # re-consent is only accepted on acts whose origin the integrator declared.
+    assert g.check(Action("fs", "delete", "/backup/a", origin="agent")).verdict in (
         Verdict.ALLOW, Verdict.HOLD)
-    g.check(Action("fs", "delete", "/backup/a"), consent=True)
+    g.check(Action("fs", "delete", "/backup/a", origin="agent"), consent=True)
     d = g.check(Action("fs", "truncate", "/data/a"))
     assert d.reason == P.R_COMPOSITION, (
         "after the only backup was destroyed, truncating the original removes the last "

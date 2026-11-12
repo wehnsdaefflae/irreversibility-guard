@@ -48,7 +48,15 @@ class Action:
     verb: str
     target: str = ""
     args: Mapping[str, Any] = field(default_factory=dict)
-    origin: str = "agent"          # agent | human | tool_output (untrusted)
+    # agent | human | tool_output (untrusted) | undeclared
+    #
+    # The default is "undeclared" ON PURPOSE. An integrator who never plumbs
+    # provenance must not silently ASSERT that every call was agent-authored: that
+    # assertion is what makes the untrusted-origin denial meaningful, and a default
+    # of "agent" would hand it out for free to exactly the integration that cannot
+    # back it. Undeclared provenance fails closed the way an unknown verb does --
+    # see Policy.trust_undeclared_origin and R_UNDECLARED_ORIGIN in policy.py.
+    origin: str = "undeclared"
     members: Sequence["Action"] = ()  # non-empty => this is a batch
 
     @property

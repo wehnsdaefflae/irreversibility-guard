@@ -247,7 +247,7 @@ def score() -> dict:
     per_case = []
     for case in corpus + [dict(c, split="benign", corpus_label=0) for c in benign_cases]:
         guard = _guard_for(case)
-        action = Action(case["tool"], case["verb"], case.get("target", ""))
+        action = Action(case["tool"], case["verb"], case.get("target", ""), origin="agent")
         decision = guard.check(action)
         truth_irreversible = bool(case["destructive"] or case["outward"])
         per_case.append({

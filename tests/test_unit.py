@@ -123,13 +123,49 @@ def test_hold_then_reconsent_allows_the_exact_act_only():
     pol = Policy(dial=Dial.HOLD_IRREVERSIBLE, require_undo=False, read_before_destroy=False)
     pol.grant("fs:truncate")
     g = Guard(policy=pol, classifier=default_classifier(), session=Session())
-    first = g.check(Action("fs", "truncate", "/tmp/a"))
+    # provenance is DECLARED here: re-consent is the agent vouching for its own act,
+    # which is only evidence if the integrator says the act came from the agent.
+    first = g.check(Action("fs", "truncate", "/tmp/a", origin="agent"))
     assert first.verdict is Verdict.HOLD and first.reason == P.R_HOLD_IRREVERSIBLE
-    again = g.check(Action("fs", "truncate", "/tmp/a"), consent=True)
+    again = g.check(Action("fs", "truncate", "/tmp/a", origin="agent"), consent=True)
     assert again.verdict is Verdict.ALLOW and again.reason == P.R_ALLOW_CONSENTED
     # a DIFFERENT act is not covered by that consent
-    other = g.check(Action("fs", "truncate", "/tmp/b"), consent=True)
+    other = g.check(Action("fs", "truncate", "/tmp/b", origin="agent"), consent=True)
     assert other.verdict is Verdict.HOLD
+
+
+def test_undeclared_provenance_fails_closed_for_an_irreversible_act():
+    """R2: `origin` is caller-supplied, so its DEFAULT must not assert agent authorship.
+
+    An integrator who never plumbs provenance cannot be handed the hold-and-re-consent
+    path for free: the guard would be treating the agent's own re-emission as evidence
+    of agent authorship it has no way to check."""
+    pol = Policy(dial=Dial.HOLD_IRREVERSIBLE, require_undo=False, read_before_destroy=False)
+    pol.grant("fs:truncate")
+    g = Guard(policy=pol, classifier=default_classifier(), session=Session())
+
+    # undeclared: a human decides, and re-consent does NOT unblock it
+    d = g.check(Action("fs", "truncate", "/tmp/a"))
+    assert d.verdict is Verdict.REQUIRE_HUMAN and d.reason == P.R_UNDECLARED_ORIGIN
+    again = g.check(Action("fs", "truncate", "/tmp/a"), consent=True)
+    assert again.verdict is Verdict.REQUIRE_HUMAN and again.reason == P.R_UNDECLARED_ORIGIN
+
+    # a human go still works on the exact act, undeclared or not
+    g.session.grant_go("fs:truncate /tmp/a")
+    assert g.check(Action("fs", "truncate", "/tmp/a")).verdict is Verdict.ALLOW
+
+    # REVERSIBLE acts are unaffected: an integration that declares nothing still runs
+    pol2 = Policy(dial=Dial.HOLD_IRREVERSIBLE)
+    pol2.grant("fs:*")
+    g2 = Guard(policy=pol2, classifier=default_classifier(), session=Session())
+    assert g2.check(Action("fs", "read", "/data/a")).verdict is Verdict.ALLOW
+
+    # and an integrator may opt back into the old permissive default explicitly
+    pol3 = Policy(dial=Dial.HOLD_IRREVERSIBLE, require_undo=False,
+                  read_before_destroy=False, trust_undeclared_origin=True)
+    pol3.grant("fs:truncate")
+    g3 = Guard(policy=pol3, classifier=default_classifier(), session=Session())
+    assert g3.check(Action("fs", "truncate", "/tmp/a")).reason == P.R_HOLD_IRREVERSIBLE
 
 
 def test_outward_act_requires_a_go_on_that_exact_canonical_act():

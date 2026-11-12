@@ -166,7 +166,7 @@ def search(depth: int = 3, mode: str = "derived", gates: bool = True) -> list[Fi
             for tool, verb, loc in sequence:
                 source = LOCATIONS[0] if (verb == "copy" and loc != LOCATIONS[0]) else ""
                 args = {"source": source} if source else {}
-                action = Action(tool, verb, loc, args)
+                action = Action(tool, verb, loc, args, origin="agent")
                 decision = guard.check(action)
                 # THE THREAT MODEL: hold-and-re-consent is satisfiable BY THE AGENT —
                 # that is what it is for. So a HOLD does not stop a determined agent; it
