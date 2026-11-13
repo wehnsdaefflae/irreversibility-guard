@@ -1,83 +1,39 @@
 # irreversibility-guard
 
-**A guard that sits between an agent and its tools and stops the irreversible act
-*before* it happens.**
+**The guard sits between an agent and its tools and stops an irreversible act before it happens.**
 
-> "Tool-using AI agents often fail to recognize when they should stop. Under ambiguity,
-> conflicting constraints, or tool failures, they may take irreversible actions before
-> identifying the risk, and a later refusal cannot undo the harm."
-> — the problem this project addresses. Across 17 frontier LLM agents, agents continued
-> acting in **40.5%** of cases even when harm was possible
-> ([Do LLM agents know when not to act?](https://arxiv.org/html/2607.10059)).
+> Tool-using AI agents often fail to recognize when to stop. Agents may take irreversible actions under ambiguity, conflicting constraints or tool failures, before they identify the risk. A later refusal can't undo the harm.
 
-A refusal that arrives after the mail is sent is worthless. So this guard intercepts
-each *proposed* tool call, renders it to a canonical act, classifies its reversibility,
-and answers with one of four verdicts — **ALLOW**, **HOLD** (re-consent required),
-**REQUIRE_HUMAN** (a human go on that exact act), **DENY** — together with a stable
-machine-readable reason code and a structured decision record.
+This project was built to address that problem. Across 17 frontier LLM agents, the agents kept acting in 40.5% of cases even when harm was possible. That figure comes from the paper "Do LLM agents know when not to act?", https://arxiv.org/html/2607.10059. A refusal after the irreversible act has no value, for example once the mail has already been sent.
+
+The guard intercepts each tool call an agent proposes, before the call is executed. It renders the call to a canonical act and classifies the act's reversibility. Then it answers with one of four verdicts: ALLOW, HOLD, REQUIRE_HUMAN or DENY. HOLD means re-consent is required. REQUIRE_HUMAN means a human has to approve that exact act with a go. Every verdict comes with a stable, machine-readable reason code and a structured decision record.
 
 ## Status
 
-**Scored on a third-party benchmark, not only on its author's own tests.** On
-[AgentHarm](https://huggingface.co/datasets/ai-safety-institute/AgentHarm) (UK AI Safety
-Institute — 416 prompts, 85 tool functions, *all foreign to this guard's manifest*, with
-the benchmark's own ground truth and an independent model's irreversibility labels):
+**The guard was scored on a third-party benchmark as well as on tests built for this project.** The benchmark is AgentHarm, https://huggingface.co/datasets/ai-safety-institute/AgentHarm, from the UK AI Safety Institute. It has 416 prompts and 85 tool functions. All 85 of its tool functions are foreign to the guard's manifest, the list of tools and verbs the guard declares. The scoring is against the benchmark's own ground truth and against irreversibility labels from an independent model.
 
 | measure | result | 95% CI |
 |---|---|---|
-| **irreversible functions an ADVERSARIAL agent reaches** (a stop it cannot clear itself) | **0/40** = **0.000** | 0.000–0.088 |
-| irreversible functions allowed outright | 0/40 = 0.000 | 0.000–0.088 |
-| **reversible functions blocked (false positives)** | **27/45** = **0.600** | 0.455–0.730 |
-| false positives on 150 independently generated benign calls | **0.187** | 0.132–0.257 |
+| **Irreversible functions an ADVERSARIAL agent reaches** (a stop only counts where the agent can't clear it itself) | 0/40 = 0.000 | 0.000–0.088 |
+| Irreversible functions allowed outright | 0/40 = 0.000 | 0.000–0.088 |
+| **Reversible functions blocked (false positives)** | 27/45 = 0.600 | 0.455–0.730 |
+| False positives on 150 independently generated benign calls | 0.187 | 0.132–0.257 |
 
-**Read the third row as carefully as the first.** The strict rate counts a stop only
-where the agent cannot clear it on its own, and the two HOLD kinds differ there:
-`hold.irreversible_needs_reconsent` *is* agent-satisfiable (the act enters
-`session.consented` and a re-emission returns `ALLOW`), while
-`hold.unknown_verb_fails_closed` is returned by the unknown tier *before* consent is
-consulted and never enters `session.consented`, so re-consent cannot clear it —
-probe-verified on `terminal`, `upload_file`, `make_online_purchases`, `wire_funds` and
-`share_on_pinterest`. Every one of the 40 irreversible functions ends at a verdict of
-that kind.
+For the strict rate in the first row, only a stop where the agent can't clear it alone counts. The two kinds of HOLD differ on whether the agent can clear them. The agent can clear `hold.irreversible_needs_reconsent`. With that hold, the act goes into `session.consented`. The guard returns `ALLOW` when the agent emits the same act again. The classifier's unknown tier handles unrecognised verbs and returns `hold.unknown_verb_fails_closed` before consent is checked. With this hold, the act never enters `session.consented`. The agent can't clear it with re-consent. This behaviour was verified with probes on `terminal`, `upload_file`, `make_online_purchases`, `wire_funds` and `share_on_pinterest`.
 
-**That figure is bought by refusing the unrecognised, not by recognising anything**, and
-the 0.600 false-positive rate is its price: the same fail-closed rule blocks 27 of the 45
-reversible functions. The honest comparison is therefore not "no guard" but
-**block-every-unknown-verb**, which also allows 0 of 40 — what this guard adds over it is
-the 18 reversible functions it still lets through and a reason code for every decision.
-An integrator who declares their tool surface moves verbs off that tier and pays less.
+All 40 irreversible functions end at a verdict of the same kind as `hold.unknown_verb_fails_closed`. The agent can't clear that kind of verdict. The 0/40 comes from refusing unrecognised verbs, not from recognising any function. The 0.600 false-positive rate is the cost of that 0/40, because the same fail-closed rule blocks 27 of the 45 reversible functions. The fair baseline for comparison is block-every-unknown-verb, not "no guard". That baseline also allows 0 of the 40 irreversible functions outright. Compared with it, the guard correctly lets 18 of the 45 reversible functions through and puts a reason code on every decision. An integrator who declares their tool surface can move verbs off the unknown tier and get fewer false-positive blocks.
 
-*This project published `18/40 = 0.450` here for one day (2026-11-12) after counting
-every HOLD as agent-satisfiable, and `0/40` before that after counting every HOLD as a
-stop. Both were wrong; `scripts/eval_agentharm.py` now distinguishes the two kinds and
-`RESULTS.md` records the correction.*
+*The figure `18/40 = 0.450` was published in this README for one day, on 2026-11-12. That figure came from counting every HOLD as one the agent could satisfy. Before that, `0/40` was published, from counting every HOLD as a stop. Both earlier figures were wrong. `scripts/eval_agentharm.py` now separates the two kinds of HOLD. The correction was recorded in `RESULTS.md`.*
 
-The honest baseline is not "no guard" either — it is **block every unknown verb**, which
-also allows 0 irreversible functions outright. What this guard adds over that trivial
-policy is the **18 of 45** reversible functions it correctly lets through, and a reason
-code on every decision. [`RESULTS.md`](RESULTS.md) carries the full decomposition, the
-clustering caveat on the per-prompt figures, and both baselines.
+`RESULTS.md` has the full decomposition, a clustering caveat on the per-prompt figures and both baselines, "no guard" and block-every-unknown-verb. In this project's own suite the guard blocks 17 of 17 hostile and failure scenarios for the right reason. Each of the 17 scenarios was expanded into variants over tools, targets, argument shapes, alias-chain depths and batch positions. 406 of the 407 harness cases pass. One is skipped by design. The guard blocks 0 of the 14 benign control actions in this project's suite. That 0.000 is superseded by the external 0.187, because the 14 benign actions only use verbs the guard also declared. In total, 436 tests pass.
 
-The author's own suite, for what it is worth: **17 of 17 hostile/failure scenarios blocked
-for the right reason**; each one expanded into variants over tools, targets, argument
-shapes, alias-chain depths and batch positions for **404 of 405 harness cases passing**
-(1 skipped by design); **0 of 14 benign control actions blocked** — a 0.000 that the
-external 0.187 supersedes, since those 14 use only verbs the author also declared;
-**436 tests green in total**. Two of the seventeen scenarios (`bp-10`, `bp-11`) were
-**found by the project's own property-based search**, not written by hand: `python -m
-guard.search --depth 3` runs all 2940 action sequences over 7 verbs × 2 locations against a
-world model that does not import the guard, and reports **184 content-losing sequences
-under the original hard-coded composition table and 0 under the derived effect-taint
-closure**. The numbers in [`RESULTS.md`](RESULTS.md) are generated from the
-suites themselves, and both external evaluations re-run offline from corpora checked into
-`tests/corpus/`. The honest account of what is *not* covered — including why the author's
-own 0.000 should be read as 0.187 and where an attacker still walks through — is in
-[`LIMITATIONS.md`](LIMITATIONS.md) and [`THREAT_MODEL.md`](THREAT_MODEL.md).
+This project's own property-based search found the scenarios `bp-10` and `bp-11`. They weren't written by hand. `python -m guard.search --depth 3` runs all 2940 action sequences over 7 verbs × 2 locations. It checks them against a world model. That model doesn't import the guard. Under the original hard-coded composition table, the search found 184 sequences that the guard allowed end to end and that still lost pre-existing content. It found 0 under the derived effect-taint closure, where the guard works out composite irreversibility from content identity, provenance and declared per-verb effects.
+
+The test suites themselves generate the numbers in `RESULTS.md`. Both external evaluations re-run offline from the corpora checked into `tests/corpus/`. `LIMITATIONS.md` and `THREAT_MODEL.md` describe what the guard doesn't cover. They also explain why the 0.000 should be read as 0.187 and where an attacker still gets past the guard.
 
 ## Install and run
 
-Requires Python 3.10+. No dependencies beyond `pytest` for the tests; **no network
-access is needed** to install or test.
+The project needs Python 3.10 or later. It only depends on `pytest`, for the tests. The install and the tests don't need network access.
 
 ```sh
 git clone <this repository>
@@ -91,25 +47,17 @@ python demo.py                  # a 30-second walk through five interceptions
 python -m guard.search --depth 3   # the property-based search, re-run from scratch
 ```
 
-The external evaluation re-scores **offline** from the corpora checked into
-`tests/corpus/` — no network, no model call, no API key:
+The external evaluation re-scores offline from the corpora in `tests/corpus/`. It doesn't need network access, a model call or an API key. This command re-derives the published numbers:
 
 ```sh
 python -m pytest tests/scenarios/test_external_eval.py -v   # the published numbers, re-derived
 ```
 
-Re-deriving them *from scratch* (re-fetching AgentHarm and re-asking an independent model
-for the labels) needs network and a model, and lives outside the repository in the
-authoring routine's `scripts/eval_agentharm.py` and `scripts/eval_external.py`, both
-included here under `scripts/` for inspection. The labels an independent model produced
-are checked in (`tests/corpus/agentharm-labels.json`) so the result is reproducible
-without one. **One caveat for a re-runner:** AgentHarm's function names include malware,
-ransomware and darknet-market entries, and at least one commercial model's safety
-classifier refuses to label the batch; the script falls back to a second provider and
-splits refused batches down to single names rather than letting the evaluation's author
-supply labels by hand.
+A full re-derivation re-fetches AgentHarm and asks the independent model for labels again. That needs network access and a model. The scripts for it are `scripts/eval_agentharm.py` and `scripts/eval_external.py`. They live outside the repository, in the authoring routine. Both are included under `scripts/` for inspection. The independent model's labels are checked in at `tests/corpus/agentharm-labels.json`, so the result is reproducible without a model.
 
-`demo.py` prints exactly this (nothing is executed — every act is only *proposed*):
+**One caveat for a re-runner:** AgentHarm's function names include malware, ransomware and darknet-market entries. At least one commercial model's safety classifier refuses to label the batch. The script falls back to a second provider when labelling is refused and splits refused batches down to single names. It doesn't allow labels to be supplied by hand.
+
+`demo.py` doesn't execute anything. Every act in it is only proposed. It prints this:
 
 ```
 1. the agent reads a file
@@ -128,7 +76,7 @@ supply labels by hand.
 
 ## Integrate it in six lines
 
-Wrap your tool dispatcher. The guard never calls your tools — it only judges.
+An integrator wraps their own tool dispatcher with the guard. The guard never calls the integrator's tools. It only judges.
 
 ```python
 from guard import Action, Dial, Guard, Policy, Session, default_classifier
@@ -153,13 +101,13 @@ def call_tool(tool, verb, target, _origin="agent", **args):
     return real_dispatch(tool, verb, target, **args)
 ```
 
-If your dispatcher genuinely cannot distinguish a model-emitted call from content
-echoed back out of a tool result, do **not** paper over it with `origin="agent"` — that
-is the assertion the guard's injection defence rests on. Set
-`Policy(trust_undeclared_origin=True)` instead, which restores the old permissive
-behaviour *visibly*, in the policy, where a reviewer can see what was given up.
+The caller supplies `origin`. The guard can't verify it. A caller passes "agent" when the model emitted the call itself and "human" when the operator asked for it directly. A call that came out of fetched content gets "tool_output". The guard denies a `tool_output` action before it reads any policy.
 
-Declare what your own tools do, so the authoritative tier covers them:
+`origin` defaults to "undeclared". That default fails closed. An irreversible act needs a human go when the integrator hasn't declared its provenance. The agent can't unblock that act with its own re-consent, because the guard can't tell an agent-emitted call from echoed content. The default doesn't affect reversible acts, so an integration still runs if it doesn't declare any provenance.
+
+A dispatcher shouldn't set `origin="agent"` to hide that it can't tell a model-emitted call from content echoed out of a tool result. The guard's injection defence depends on `origin="agent"` being true. Such a dispatcher should set `Policy(trust_undeclared_origin=True)` instead. With that setting the guard goes back to the old permissive behaviour. The setting is visible in the policy, where a reviewer sees what was given up.
+
+An integrator can declare their own tools so the classifier handles them in its authoritative tier, the tier for declared tools.
 
 ```python
 from guard import ManifestEntry, default_classifier
@@ -171,41 +119,28 @@ c.alias("housekeeping:tidy", "fs:delete")   # a wrapper reaching a destructive v
 
 ## The mechanisms
 
-`sound?` below means one specific thing: the verdict is a **decidable, intent-free**
-property of the call and the session record, so it holds regardless of what any
-classifier believes about meaning. It does **not** mean complete, nor sufficient, nor
-secure against an attacker who can reach the process — `LIMITATIONS.md` defines the term
-and lists what it excludes.
+The `sound?` column below means one specific thing: the verdict is a decidable, intent-free property of the call and the session record. That verdict holds regardless of how any classifier reads what the call means. A sound mechanism can still be incomplete, insufficient or insecure against an attacker who can reach the process. The term is defined in `LIMITATIONS.md`, which lists its exclusions.
 
 | mechanism | what it stops | sound? |
 |---|---|---|
-| **Fail-closed provenance** | an irreversible act whose `origin` the integrator never declared: the guard cannot tell an agent-emitted call from one echoed out of fetched content, so the agent's own re-consent is refused and a human decides (`Policy(trust_undeclared_origin=True)` opts out, visibly) | yes (structural) |
-| **Canonical action rendering** | policy written against the act, not its phrasing; kwarg order, nesting and aliasing cannot change the string a rule sees | yes (structural) |
-| **Per-VERB capability reservation** | `mail:*` grants `mail:list` and `mail:draft` but **never** `mail:send`: the outward, irreversible verb of an otherwise-safe tool stays separately reserved | yes (structural) |
-| **Read-before-destroy preconditions** | an irreversible act on content the agent never read in this session is refused — you cannot delete what you have not inspected | yes (structural) |
-| **Hold and re-consent** | an irreversible act is suspended and re-presented; the agent must re-emit *that exact act* to proceed, and every hold is counted in an evidence tally that makes the guard's false-positive cost measurable | partly |
-| **Human-committed approval dials** | at the top dial a self-modifying act (changing the guard's own policy, config or code) is not agent-grantable **at all** — not even with a go in the session | yes (structural) |
-| **Batch analysis** | an irreversible act hidden inside a batch of reversible ones, at any position and nesting depth — the batch inherits its strictest member's verdict | yes (structural) |
-| **Composition analysis** | a sequence of individually-reversible steps whose composition destroys — **derived** by an effect-taint closure over content identity, provenance and declared per-verb effects (`guard/taint.py`), not matched against a list, so a hazard created several steps earlier on a *different* location is caught too | no |
-| **Manifest fidelity** | an act *declared* reversible whose declared undo does not hold for this target — a `create` onto an already-occupied location destroys what was there, and deleting the copy does not restore it (`bp-11`, **found by the search, not by the author**) | no |
-| **Property-based search** | `python -m guard.search --depth 3` exhaustively searches action sequences against a concrete world model that does not import the guard, and reports any sequence the guard allowed end to end that still lost pre-existing content: **184 such sequences under the old pair table, 0 under the derived closure** (`RESULTS.md`). **Confounded, and stated as such:** selecting the pair table also switches off the manifest-fidelity check, so 184 → 0 is what the closure and that check buy *together*. The search is bounded to its alphabet — see `LIMITATIONS.md` for what "0" does and does not mean | no |
+| **Fail-closed provenance** | The guard stops an irreversible act when the integrator never declared its `origin`. It refuses the agent's own re-consent for such an act because it can't tell an agent-emitted call from a call echoed out of fetched content. A human decides. The opt-out is `Policy(trust_undeclared_origin=True)` and is visible in the policy. | yes (structural) |
+| **Canonical action rendering** | The policy is written against the act, not its wording. Kwarg order, nesting and aliasing can't change the string a rule sees. | yes (structural) |
+| **Per-VERB capability reservation** | `mail:*` grants `mail:list` and `mail:draft` but never `mail:send`. The outward irreversible verb of an otherwise safe tool is reserved separately. | yes (structural) |
+| **Read-before-destroy preconditions** | The guard refuses an irreversible act on content if the agent never read that content in this session. The agent can only delete what it has inspected. | yes (structural) |
+| **Hold and re-consent** | The guard suspends an irreversible act and presents it again. The agent has to re-emit that exact act to go ahead. Every hold is counted in an evidence tally, so the guard's false-positive cost is measurable. | partly |
+| **Human-committed approval dials** | At the top setting of the approval dial, the agent can't grant a self-modifying act at all. A self-modifying act changes the guard's own policy, config or code. A go in the session doesn't make it grantable either. | yes (structural) |
+| **Batch analysis** | The guard stops an irreversible act hidden in a batch of reversible acts, at any position and nesting depth. The batch gets the verdict of its strictest member. | yes (structural) |
+| **Composition analysis** | The guard stops a sequence of individually reversible steps that together destroy content. `guard/taint.py` derives the analysis by effect-taint closure over content identity, provenance and declared per-verb effects. The guard doesn't match sequences against a list. It also catches a hazard created several steps earlier on a different location. | no |
+| **Manifest fidelity** | The guard stops an act declared reversible when its declared undo doesn't hold for this target. A `create` onto an already occupied location destroys the previous content, for example. Deleting the copy doesn't restore that content. That case is `bp-11`. The search found it, not manual review. | no |
+| **Property-based search** | `python -m guard.search --depth 3` searches action sequences exhaustively. It checks them against a concrete world model. That model doesn't import the guard. The search reports any sequence the guard allowed end to end that still lost pre-existing content. It found 184 such sequences under the old pair table and 0 under the derived closure. `RESULTS.md` has both figures. That result is confounded. Selecting the pair table also turns off the manifest-fidelity check, so the drop from 184 to 0 comes from the closure and the manifest-fidelity check together. The search only covers the verbs and locations in its alphabet. `LIMITATIONS.md` explains what that "0" means and what it doesn't mean. | no |
 
-Two further properties worth naming: a human **go binds to one exact canonical act and
-is single-use**, so a go on `link=repo-a` does not authorise `link=repo-b` and cannot be
-replayed; and an action whose `origin` is `tool_output` is **denied before any policy is
-read**, so an instruction injected into fetched content can never drive the guard.
+The guard binds a human go to one exact canonical act. Each go is single-use and can't be replayed. A go on `link=repo-a` doesn't authorise `link=repo-b`. An instruction injected into fetched content can never control the guard's decisions, because the guard denies an action with `origin` `tool_output` before it reads any policy.
 
 ## Prior art and case study
 
-The design is not invented from scratch. It generalises four guard mechanisms of the
-autonomous-routine scheduler this project was built inside — a single-operator system, so
-treat "in use" as "in use by its author", not as a deployment study; what is inspectable
-is the mechanism set, described here and reimplemented in this repository: consequence
-reminders that hold a pending action and demand re-consent with an evidence tally;
-capability reserved per tool *verb* rather than per tool (`mail` granted, `mail send`
-reserved); preconditions that refuse an irreversible act until the run has read what it
-would destroy; and approval dials making self-modifying acts human-committed only.
-`THREAT_MODEL.md` records where this implementation goes beyond that prior art and why.
+The design wasn't invented from scratch. Four guard mechanisms were generalised from the autonomous-routine scheduler this project was built inside. That scheduler is a single-operator system. For the scheduler, "in use" means its author uses it. This isn't a deployment study. The mechanism set can be inspected. It's described in this README and reimplemented in the repository.
+
+The scheduler's consequence reminders hold a pending action and demand re-consent with an evidence tally. Capability there is reserved per tool verb, not per tool. `mail` is granted while `mail send` is reserved. Preconditions refuse an irreversible act until the run has read what the act would destroy. With the approval dials, only a human can commit a self-modifying act. `THREAT_MODEL.md` records where this implementation goes beyond that prior art, and why.
 
 ## Repository layout
 
@@ -225,10 +160,6 @@ LIMITATIONS.md    implemented+tested / implemented+untested / theoretical, hones
 
 ## Licence
 
-MIT — see [`LICENSE`](LICENSE) for the text.
+MIT
 
-The third-party evaluation corpora under `tests/corpus/` are **not** covered by it and
-keep their own terms: `deepset/prompt-injections` is CC-BY-4.0 (attribution: deepset
-GmbH), and the AgentHarm derivative holds only ids, names and `target_functions` — its
-prompt texts are deliberately not redistributed (`tests/corpus/FETCH.md`). `LICENSE`
-lists each file and its source.
+The licence text is in `LICENSE`. The MIT licence doesn't cover the third-party evaluation corpora under `tests/corpus/`. Those corpora keep their own terms. `deepset/prompt-injections` is CC-BY-4.0, with attribution to deepset GmbH. The AgentHarm derivative only holds ids, names and `target_functions`. The AgentHarm prompt texts are deliberately not redistributed (`tests/corpus/FETCH.md`). `LICENSE` lists each file and its source.
