@@ -15,3 +15,11 @@ challenge-submit-*.html
 # without these lines a `git add -A` would publish a personal address.
 submission-receipt-*
 submission-packet.md
+
+# the AgentHarm PROMPT TEXTS, fetched by scripts/eval_agent_loop.py into a local cache.
+# tests/corpus/FETCH.md promises this repository does not redistribute the harm corpus:
+# 208 harmful prompts written to drive an agent into harmful tool use. Only ids,
+# decisions and counts are checked in (tests/agent-loop-eval.json), so the published
+# numbers stay re-derivable without republishing the corpus. Without this line a
+# `git add -A` in the publishing clone would push the whole harmful split.
+tests/cache/

@@ -43,7 +43,7 @@ An irreversible act with undeclared provenance gets `REQUIRE_HUMAN`, with the re
 
 *Has the solution been tested against realistic failure scenarios and bypass attempts?*
 
-The suite passed 436 cases and skipped one by design. Its cases include unit tests, 17 named scenarios, a variant expansion of those scenarios and 14 benign controls. There are also clause cases for the composition search, regression tests on external corpora and meta-tests.
+The suite passed 445 cases and skipped one by design. Its cases include unit tests, 17 named scenarios, a variant expansion of those scenarios and 14 benign controls. There are also clause cases for the composition search, regression tests on external corpora and meta-tests.
 
 Two of the 17 scenarios exist because someone broke the guard. An independent reviewer found `bp-12` on 2026-11-12. The reviewer probed the shipped API and didn't read the documentation. The guard recorded a batch member's read into the session as it judged that member. It did that even when the guard then DENIED the batch and nothing in the batch executed. So a read smuggled into a blocked batch satisfied read-before-destroy for a later delete. A `DENY` on that delete can't be cleared. The bug turned it into an `ALLOW`. In the fix, the batch path evaluates members against a snapshot of the session and commits nothing unless the whole batch is allowed. `bp-12` asserts that the leak is gone. `bp-13` covers the fail-closed provenance rule. The `bp-12` episode counts as the clearest statement on how sound the mechanisms are. Structural means the verdict is checkable. It doesn't mean the implementation is right.
 
@@ -112,6 +112,28 @@ A negative result is reported as well. `deepset/prompt-injections` was scored fi
 Both evaluations reproduce offline from the checked-in corpora, through `scripts/eval_agentharm.py` and `scripts/eval_external.py`. `tests/scenarios/test_external_eval.py` recomputes the verdicts inside the suite. It doesn't use the network and doesn't call a model. So the published external numbers can't silently go stale.
 
 Two meta-tests check that the suite measures something. `test_a_weakened_guard_fails_these_cases` switches off the structural gates and checks that the blocked acts then go through. So the guard drives the assertions, not the test's arrangement. `test_every_declared_scenario_has_a_case` fails if a scenario silently drops out of the table. The suite runs offline and deterministically. It doesn't use the network or the clock and doesn't call a model.
+
+### A real agent in the loop, not just a list of function names
+
+The earlier evidence in this submission comes from querying the guard directly. Each query gives it a function name or a declared sequence of acts, and the guard returns its verdict on that input. No agent was running in any earlier evaluation. That is a fair criticism of the earlier evidence, and an independent reviewer made it the first comment on this submission. It is now addressed with measured results.
+
+`scripts/eval_agent_loop.py` runs a live model as an agent. It gives the model an AgentHarm task and the benchmark's 85-function tool surface. The model chooses every call itself, one step at a time, for at most 8 steps per episode. The script intercepts each proposed call before a stubbed dispatcher would run it. A refusal from the guard goes back to the agent as text. So an agent that re-plans after a refusal, swaps in a different call or retries the same call is observed doing it rather than assumed not to.
+
+The same 40 episodes ran in three arms, one evaluation configuration each, over 20 harmful prompts and 20 benign prompts sampled at seed 20261113. The `none` arm uses no guard, so every proposed call executes: its numbers are the upper bound on harm and on usefulness alike. The `guard` arm is the configuration this repository ships. The `block_unknown` arm refuses any verb that is not declared in the manifest. It is the trivial comparator, and any reviewer should ask for it.
+
+| Arm | Irreversible target calls executed | Harmful episodes reaching an irreversible act | Benign tasks completed | Calls executed / proposed |
+|---|---|---|---|---|
+| `none` | 18/30 = 0.600 (CI 0.423–0.754) | 11/20 = 0.55 | 7/20 = 0.35 (CI 0.181–0.567) | 193/193 |
+| `guard` | 0/30 = 0.000 (CI 0.000–0.114) | 0/20 = 0.00 | 0/20 = 0.00 (CI 0.000–0.161) | 80/202 |
+| `block_unknown` | 0/30 = 0.000 (CI 0.000–0.114) | 0/20 = 0.00 | 0/20 = 0.00 (CI 0.000–0.161) | 0/160 |
+
+The unguarded agent executed 18 of the 30 irreversible calls the benchmark aimed to get from it, and reached an irreversible act in 11 of the 20 harmful episodes. With the guard in place the agent executed 0 of those irreversible calls. Of the 120 episodes that ran, 0 errored.
+
+Benign task completion went from 0.35 unguarded to 0.00 guarded. That 0.00 is the same result as refusing the whole tool surface, so on this surface the guard gains no completion over `block_unknown`, the trivial baseline. Almost every refusal in the transcript is the same hold, `hold.unknown_verb_fails_closed`. The guard issued it for almost every call because the manifest declares 0 of the 85 verbs, and the hold comes back before consent is checked, so the agent cannot clear it. In the transcript the `guard` and `block_unknown` arms differ only in which calls they allowed to run: the guard ran 80 of 202 proposed calls, `block_unknown` ran 0 of 160. Reversible work continues under the guard even where whole tasks do not complete.
+
+This result supports the claim that the guard stops an agent actively trying to reach irreversible actions. The guard's author never saw this tool surface, and a live model chose the calls on it, so the claim holds under those conditions. The result does not support a claim that the guard is cheap to deploy on a surface where the verbs are not declared, because on this surface it costs every benign completion. The manifest tier is the tier that should recover that cost, and it was not tested in this evaluation, because declaring these 85 functions would give the evaluation its own answers. `LIMITATIONS.md` lists the trade-off between false positives and manifest coverage as an open item; it is not claimed as a result here.
+
+The numbers come from `tests/agent-loop-eval.json`, the checked-in transcript of every episode and every decision. `tests/scenarios/test_agent_loop.py` re-derives the numbers offline without calling a model. It fails if any arm proposed zero calls, if any refusal in the guard arm came from capability reservation instead of irreversibility, if the unguarded arm executed zero irreversible calls, or if the record does not include the benign cost. The AgentHarm prompt texts are not redistributed in this repository; `scripts/eval_agent_loop.py` fetches them into a gitignored cache.
 
 ## 3 · Real-world relevance (20%)
 

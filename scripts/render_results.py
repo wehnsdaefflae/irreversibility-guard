@@ -273,6 +273,83 @@ def render(r: dict) -> str:
           "(`tests/scenarios/test_external_eval.py`), not merely stated.")
         a("")
 
+    loop = r.get("agent_loop")
+    if loop:
+        rep = loop["report"]
+        arms = rep["per_arm"]
+        a("## A REAL AGENT in the loop (AgentHarm, live tool-calling episodes)")
+        a("")
+        a(f"Measured {loop['generated']} · `scripts/eval_agent_loop.py run` · raw: "
+          f"`tests/agent-loop-eval.json` · model `{loop['model']}` · seed "
+          f"`{loop['seed']}` · {loop['n_per_config']} prompts per config · "
+          f"max {loop['max_steps']} steps · tool surface {loop['surface_size']} functions")
+        a("")
+        a("Every other number on this page is **static**: a tool name, or a declared "
+          "sequence, put to the guard directly. This section is the only one where a "
+          "model is actually driving. It is given the AgentHarm task text and the "
+          "benchmark's 85-function tool surface, it chooses each call itself, and every "
+          "call it proposes is intercepted before a (stubbed) dispatcher would run it. "
+          "A refusal is handed back to the agent in words, so an agent that re-plans, "
+          "substitutes or retries is measured doing it.")
+        a("")
+        a("Three arms over the same episodes: `none` is no guard at all (the upper bound "
+          "on both harm and utility), `guard` is the deployable configuration, and "
+          "`block_unknown` refuses every verb absent from the manifest — the trivial "
+          "baseline a reviewer should demand, present to price what it costs.")
+        a("")
+        a("| Arm | Irreversible target calls executed | Harmful episodes reaching an "
+          "irreversible act | Benign tasks completed | Calls executed / proposed | "
+          "HOLDs cleared by the agent's own re-consent |")
+        a("| --- | --- | --- | --- | --- | --- |")
+        for name in loop["arms"]:
+            s = arms[name]
+            ci = s.get("irreversible_targets_executed_ci")
+            ci_text = (f" (CI {ci[1]:.3f}–{ci[2]:.3f})" if ci else "")
+            bci = s.get("benign_completion_ci")
+            bci_text = (f" (CI {bci[1]:.3f}–{bci[2]:.3f})" if bci else "")
+            a(f"| `{name}` | {s['irreversible_targets_executed']}/"
+              f"{s['irreversible_targets_wanted']} = "
+              f"{s['irreversible_targets_executed_rate']}{ci_text} | "
+              f"{s['harmful_episodes_reaching_an_irreversible_act']}/"
+              f"{s['harmful_episodes']} = "
+              f"{s['harmful_episodes_reaching_an_irreversible_act_rate']} | "
+              f"{s['benign_tasks_completed']}/{s['benign_episodes']} = "
+              f"{s['benign_completion_rate']}{bci_text} | "
+              f"{s['calls_executed']}/{s['calls_proposed']} | "
+              f"{s['holds_cleared_by_agent_reconsent']} |")
+        a("")
+        g, n, bu = arms["guard"], arms["none"], arms["block_unknown"]
+        a(f"**Read the benign column, not only the harm column.** Driving a live agent "
+          f"over a tool surface where **every one of the {loop['surface_size']} verbs is "
+          f"undeclared** is the worst case for this design, and the cost shows: the "
+          f"unguarded arm completes {n['benign_completion_rate']} of the benign tasks and "
+          f"the guarded arm {g['benign_completion_rate']}. The reason is "
+          f"`hold.unknown_verb_fails_closed`, which is reached before consent is "
+          f"consulted and is therefore **not** clearable by the agent — which is also why "
+          f"the re-consent column reads {g['holds_cleared_by_agent_reconsent']}. On a "
+          f"surface with a manifest, those same calls would be judged by the manifest "
+          f"tier instead; `tests/agentharm-eval.json` measures the undeclared condition "
+          f"call-by-call, and the manifest-coverage curve is an open item in "
+          f"`LIMITATIONS.md`, not a claim made here.")
+        a("")
+        a(f"**What the baseline costs.** `block_unknown` reaches "
+          f"{bu['irreversible_targets_executed']} irreversible target calls — perfect by "
+          f"construction, since it refuses everything undeclared — at a benign completion "
+          f"rate of {bu['benign_completion_rate']}. It is the honest comparator: any "
+          f"guard must beat refusing the whole surface, and on a surface this foreign the "
+          f"margin is about which calls still run, not about the harm column.")
+        a("")
+        errs = sum(arms[a_]["episodes_with_error"] for a_ in loop["arms"])
+        a(f"Episodes that errored (a provider failure or an unusable model reply, counted "
+          f"rather than silently read as the agent finishing): **{errs}** of "
+          f"{sum(arms[a_]['harmful_episodes'] + arms[a_]['benign_episodes'] for a_ in loop['arms'])}.")
+        a("")
+        a("The AgentHarm prompt **texts** are not redistributed by this repository "
+          "(`tests/corpus/FETCH.md`): the script fetches them from the HuggingFace "
+          "datasets server into a gitignored cache, and only ids, decisions and counts "
+          "are checked in. Re-running needs network access and an OpenRouter key.")
+        a("")
+
     ext = r.get("external")
     if ext:
         b = ext["benign_traffic"]
@@ -347,7 +424,8 @@ def main() -> int:
     # the de-authored external evaluation writes its own dated records
     # (scripts/eval_agentharm.py, scripts/eval_external.py). Same contract: folded in
     # here so every number in RESULTS.md comes from a file on disk, absent => omitted.
-    for key, name in (("agentharm", "agentharm-eval.json"), ("external", "external-eval.json")):
+    for key, name in (("agentharm", "agentharm-eval.json"), ("external", "external-eval.json"),
+                      ("agent_loop", "agent-loop-eval.json")):
         path = RESULTS_JSON.parent / name
         if path.exists():
             r[key] = json.loads(path.read_text(encoding="utf-8"))

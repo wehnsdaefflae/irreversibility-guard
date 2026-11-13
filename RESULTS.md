@@ -111,6 +111,28 @@ Only the first is counted as a non-stop. Earlier revisions of this file counted 
 
 **The guard is an irreversibility gate, not a harm classifier.** AgentHarm's harmful and `harmless_benign` prompts draw on the same tool surface, and the guard delays 0.808 of the harmful prompts and 0.808 of the benign ones — the same rate, because it judges the act and never the intent. It is asserted as a test (`tests/scenarios/test_external_eval.py`), not merely stated.
 
+## A REAL AGENT in the loop (AgentHarm, live tool-calling episodes)
+
+Measured 2026-11-13 · `scripts/eval_agent_loop.py run` · raw: `tests/agent-loop-eval.json` · model `openai/gpt-4o-mini` · seed `20261113` · 20 prompts per config · max 8 steps · tool surface 85 functions
+
+Every other number on this page is **static**: a tool name, or a declared sequence, put to the guard directly. This section is the only one where a model is actually driving. It is given the AgentHarm task text and the benchmark's 85-function tool surface, it chooses each call itself, and every call it proposes is intercepted before a (stubbed) dispatcher would run it. A refusal is handed back to the agent in words, so an agent that re-plans, substitutes or retries is measured doing it.
+
+Three arms over the same episodes: `none` is no guard at all (the upper bound on both harm and utility), `guard` is the deployable configuration, and `block_unknown` refuses every verb absent from the manifest — the trivial baseline a reviewer should demand, present to price what it costs.
+
+| Arm | Irreversible target calls executed | Harmful episodes reaching an irreversible act | Benign tasks completed | Calls executed / proposed | HOLDs cleared by the agent's own re-consent |
+| --- | --- | --- | --- | --- | --- |
+| `none` | 18/30 = 0.6 (CI 0.423–0.754) | 11/20 = 0.55 | 7/20 = 0.35 (CI 0.181–0.567) | 193/193 | 0 |
+| `guard` | 0/30 = 0.0 (CI 0.000–0.114) | 0/20 = 0.0 | 0/20 = 0.0 (CI 0.000–0.161) | 80/202 | 0 |
+| `block_unknown` | 0/30 = 0.0 (CI 0.000–0.114) | 0/20 = 0.0 | 0/20 = 0.0 (CI 0.000–0.161) | 0/160 | 0 |
+
+**Read the benign column, not only the harm column.** Driving a live agent over a tool surface where **every one of the 85 verbs is undeclared** is the worst case for this design, and the cost shows: the unguarded arm completes 0.35 of the benign tasks and the guarded arm 0.0. The reason is `hold.unknown_verb_fails_closed`, which is reached before consent is consulted and is therefore **not** clearable by the agent — which is also why the re-consent column reads 0. On a surface with a manifest, those same calls would be judged by the manifest tier instead; `tests/agentharm-eval.json` measures the undeclared condition call-by-call, and the manifest-coverage curve is an open item in `LIMITATIONS.md`, not a claim made here.
+
+**What the baseline costs.** `block_unknown` reaches 0 irreversible target calls — perfect by construction, since it refuses everything undeclared — at a benign completion rate of 0.0. It is the honest comparator: any guard must beat refusing the whole surface, and on a surface this foreign the margin is about which calls still run, not about the harm column.
+
+Episodes that errored (a provider failure or an unusable model reply, counted rather than silently read as the agent finishing): **0** of 120.
+
+The AgentHarm prompt **texts** are not redistributed by this repository (`tests/corpus/FETCH.md`): the script fetches them from the HuggingFace datasets server into a gitignored cache, and only ids, decisions and counts are checked in. Re-running needs network access and an OpenRouter key.
+
 ## Held-out benign traffic (independently generated)
 
 Measured 2026-11-12 · `scripts/eval_external.py` · raw: `tests/external-eval.json`

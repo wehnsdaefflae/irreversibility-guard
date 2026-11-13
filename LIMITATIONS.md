@@ -48,6 +48,7 @@ An item goes on this list when its code exists and at least one case asserts on 
 - Under read-set integrity, injected content can't perform the read that would unlock a destroy, because the guard refuses its untrusted origin before the read gets recorded. Case bp-09 covers it.
 - The single-use go gate needs the canonical form to be permutation-invariant and injective. Over 250 distinct acts no collision was found. The tests are in `tests/scenarios/test_fuzz.py`.
 - The JSONL audit log and the per-session verdict tally have 2 unit cases.
+- **A real agent driving the guard.** In `scripts/eval_agent_loop.py` a live model picked its own calls from the 85 functions in AgentHarm's tool surface, for up to 8 steps per episode. Every call the model proposed got intercepted before it reached a stubbed dispatcher. 40 episodes ran in each of three evaluation conditions. The agent ran unguarded in one of them and guarded in another. Unguarded, it executed 18 of 30 irreversible target calls. With the guard it executed 0 of the irreversible target calls. The transcript of all 120 episodes is checked in. Nine test cases in `tests/scenarios/test_agent_loop.py` re-derive the numbers offline. What that result costs is in the section on the benign agent below, and it is not hidden here.
 
 ## Implemented, untested
 
@@ -86,6 +87,16 @@ The 0.000 is a real measurement. The false-positive cost couldn't appear in the 
 The false-positive cost isn't a defect that tuning removes. It's the price of the design's one non-negotiable rule. Declaring tools reduces the cost. Weakening the rule doesn't. With a complete manifest an integrator approaches the first-row rate. An integrator gets the third-row rate if they declare nothing. Integrators should budget for this cost as a trade. The numbers in the table are the basis for that budget.
 
 Roughly half of the zero false-negative rate in the same table comes from fail-closed refusals, not from skill at recognising verbs. That half covers 45 verbs. The guard couldn't read those 45, so the fail-closed rule refused them. Of the 45, 18 are irreversible. Per-verb capability reservation is the soundest mechanism in the guard. It was deliberately bypassed in the external evaluation, because the whole evaluation grants the agent the exact verb it asks for. The reservation doesn't contribute anything to those numbers. A deployment would be safer than what was measured if it used per-verb capability reservation. Verbs that the heuristic tier reads wrongly would make a deployment less safe than what was measured. The session tally at `guard.session.tally` and the audit log are there so an integrator can measure false positives on their own traffic instead of trusting this number.
+
+### What the guard costs a benign agent, measured with the agent running
+
+The false-positive number in the section before this one is a per-call figure. The cost to an agent that has to finish a task is higher than that figure, because one refusal in a chain of calls ends the task. That task-level cost was measured directly, with a live agent in the loop, and it is worse than it looks from the per-call figure.
+
+The agent ran on AgentHarm's 85-function surface. The guard's manifest declares none of those 85 verbs. Benign task completion was 0.35 with no guard and 0.00 with the guard. A trivial baseline that refuses the whole tool surface also came out at 0.00. On an entirely undeclared surface the guard added no completions over that baseline.
+
+Nearly every refusal the guard returned was the hold `hold.unknown_verb_fails_closed`. That hold comes back before consent gets consulted, so the agent cannot clear it. Reversible calls still ran under the guard, and that is the only measured difference between the guard and the trivial baseline: the guard let 80 of 202 proposed calls run, while under the trivial baseline 0 of 160 proposed calls ran.
+
+The deployable claim made for this guard covers a surface with a manifest. The agent-loop evaluation does not test that kind of surface, because declaring the 85 functions would give the evaluation the answers it is meant to test. A curve of false positives against manifest coverage would decide whether the guard's cost is acceptable. That curve does not exist yet; it is already on the list of open items further down. Until it does, an integrator should read 0.00 as the worst case of deploying the guard with no manifest at all.
 
 ## Scope of the axis
 
