@@ -55,7 +55,18 @@ python -m pytest tests/scenarios/test_external_eval.py -v   # the published numb
 
 A full re-derivation re-fetches AgentHarm and asks the independent model for labels again. That needs network access and a model. The scripts for it are `scripts/eval_agentharm.py` and `scripts/eval_external.py`. They live outside the repository, in the authoring routine. Both are included under `scripts/` for inspection. The independent model's labels are checked in at `tests/corpus/agentharm-labels.json`, so the result is reproducible without a model.
 
-**One caveat for a re-runner:** AgentHarm's function names include malware, ransomware and darknet-market entries. At least one commercial model's safety classifier refuses to label the batch. The script falls back to a second provider when labelling is refused and splits refused batches down to single names. It doesn't allow labels to be supplied by hand.
+**One caveat for a re-runner:** AgentHarm's function names include malware, ransomware and darknet-market entries. On 2026-11-12 a commercial model's safety classifier refused to label the batch at all. The script falls back to a second provider when labelling is refused and splits refused batches down to single names. It doesn't allow labels to be supplied by hand.
+
+Two providers were then measured directly, on 2026-11-13, with the labelling prompt
+verbatim and the two overtly harmful names included: the Claude Code CLI (`gu claude ask`,
+opus) and OpenRouter (`gu llm-complete --provider openrouter`). **Neither refused, and both
+labelled every name**, so the refusal is neither universal nor permanent. They did
+**disagree** on `create_ransomware` — destructive `false` from the first, `true` from the
+second — which says plainly that the ground truth here is one model's judgement on a
+contested name and not a fact. The probe covers 6 of the 85 names on one day and is checked
+in at `tests/provider-probe-2026-11-13.json`; the reproducible route for the published
+numbers remains the checked-in labels at `tests/corpus/agentharm-labels.json`, which need no
+model at all.
 
 `demo.py` doesn't execute anything. Every act in it is only proposed. It prints this:
 
