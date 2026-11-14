@@ -33,7 +33,7 @@ python -m pytest tests/ -v   (from the repository root, after `pip install -e .[
 
 **17 of 17 scenarios pass** (0 not passing).
 
-Each named scenario above is additionally expanded by `tests/scenarios/test_fuzz.py` over many tools, targets, argument shapes, alias-chain depths, batch positions and nesting depths: **428 of 429 harness cases pass** (0 failing). A variant whose verdict or reason code differs from its family's fails the suite.
+Each named scenario above is additionally expanded by `tests/scenarios/test_fuzz.py` over many tools, targets, argument shapes, alias-chain depths, batch positions and nesting depths: **441 of 442 harness cases pass** (0 failing). A variant whose verdict or reason code differs from its family's fails the suite.
 
 ## Benign control set — the cost of the guard
 
@@ -194,6 +194,32 @@ Measured 2026-11-14 · `scripts/eval_agent_loop.py run --arms guard@0,guard@25,�
 **What it costs the person.** Escalated decisions rise with coverage too: 27 at 0% (23 on benign tasks) against 48 at 100% (32 on benign). More coverage means more acts reach the reviewer as *decidable* rather than dying as unrecognised — that is the mechanism, and the review load is the bill.
 
 **Four limits on these rows, all of which weaken them.** (1) The reviewer is an oracle: it approves on benign tasks and refuses on harmful ones by reading the benchmark's own label, so these are an upper bound on availability and a lower bound on harm — a real reviewer who approves 48 requests a session is exactly the reviewer who rubber-stamps. (2) The completion rates rest on 20 benign episodes per arm; the 0.10→0.30 rise has overlapping confidence intervals (0.028–0.301 against 0.145–0.519) and is a direction, not a point estimate. (3) One coverage draw per arm, not the eight the static curve averages over. (4) Declarations are synthesized from ground truth, as above.
+
+## Verified copy tracking: asking storage instead of trusting bookkeeping (I1b)
+
+Measured 2026-11-14 · `scripts/eval_copy_verification.py sweep` · raw: `tests/copy-verification-eval.json` · depth 3, 20412 sequences per arm × 8 arms
+
+Clause 3 of the taint closure asks whether a copy of the content survives an act. Until 2026-11-14 the answer came from structural bookkeeping alone: a copy counted because a copy-style act had been **allowed**, and nothing ever asked storage — so a copy a process outside the guard had deleted still cleared the clause. That is an *under*-block, and the only failure mode in the module that loses content rather than annoying a user. It is now an interface: the integration supplies an `existence_probe`, and `Policy.copy_verification` decides how a believed copy becomes one that may be relied on. Anything short of a positive confirmation — no probe, unanswerable, raising — reads as **absent**.
+
+| Condition | Copy verification | Sequences that lost content | Harmless sequences stopped |
+|---|---|---:|---:|
+| storage intact | `trust` (pre-fix baseline) | 864 (0.0423) | 4362 (0.2137) |
+| storage intact | `probe`, no probe supplied | 784 (0.0384) | 4762 (0.2333) |
+| storage intact | `probe`, truthful probe | 848 (0.0415) | 4362 (0.2137) |
+| storage intact | `assume_absent` | 784 (0.0384) | 4762 (0.2333) |
+| **copy deleted out of band** | `trust` (pre-fix baseline) | 922 (0.0452) | 4044 (0.1981) |
+| **copy deleted out of band** | `probe`, no probe supplied | 784 (0.0384) | 4386 (0.2149) |
+| **copy deleted out of band** | `probe`, truthful probe | 818 (0.0401) | 4188 (0.2052) |
+| **copy deleted out of band** | `assume_absent` | 784 (0.0384) | 4386 (0.2149) |
+
+**What the fix buys.** When something outside the guard removes the copy, the pre-fix reading lets **922** sequences lose pre-existing content; failing closed lets **784** — **138 under-blocks closed**. **What it costs.** It stops 342 more sequences that would have lost nothing (19.81% → 21.49% of all sequences). With storage intact the same trade is 864 → 784 violations against 21.37% → 23.33% over-blocks: the fix is not free even when nothing has gone wrong, because the guard cannot tell a healthy backup from a missing one without being told.
+
+**The floor no arm reaches past.** Every arm still allows 784 losing sequences. Copy verification closes the hazards whose recoverability rested on a copy; it says nothing about the rest, and the remaining ones are the open items in LIMITATIONS.md (canonicalization, deeper composition search, manifest fidelity). A number that fell to zero here would mean the measurement was circular.
+
+**Limits on these rows.**
+- The probe in the 'probe_truthful' arm reads the oracle world directly, so it is a PERFECT probe. A real integration's probe is as good as its storage API: stale caches, eventual consistency and permission errors all read as unknown, which this guard fails closed (counted in the probe_no_probe arm's cost).
+- The out_of_band condition removes the copy immediately. A deletion that races the destroy (TOCTOU) is not modelled and remains a stated limitation.
+- Depth 3 over 9 verbs x 3 locations (fs:read, fs:write_new, fs:append, fs:copy, fs:overwrite, fs:truncate, fs:delete, db:snapshot, db:drop over /data/a, /data/b, /backup/x) is a small box, and every count here describes that box only. Two of those verbs (db:snapshot, db:drop) exist so the hazard is observable at all: with the deployable gates on, every destructive fs verb is already held for a missing undo path, so in an fs-only alphabet the arms are indistinguishable (this script's selftest catches that).
 
 ## Held-out benign traffic (independently generated)
 

@@ -516,6 +516,71 @@ def render(r: dict) -> str:
           "from ground truth, as above.")
         a("")
 
+    cv = r.get("copy_verification")
+    if cv:
+        arms, A = cv["arms"], cv["arms"]
+        a("## Verified copy tracking: asking storage instead of trusting bookkeeping (I1b)")
+        a("")
+        a(f"Measured {cv['generated']} · `scripts/eval_copy_verification.py sweep` · raw: "
+          f"`tests/copy-verification-eval.json` · depth {cv['depth']}, "
+          f"{cv['sequences_per_arm']} sequences per arm × {len(cv['arms'])} arms")
+        a("")
+        a("Clause 3 of the taint closure asks whether a copy of the content survives an "
+          "act. Until 2026-11-14 the answer came from structural bookkeeping alone: a "
+          "copy counted because a copy-style act had been **allowed**, and nothing ever "
+          "asked storage — so a copy a process outside the guard had deleted still "
+          "cleared the clause. That is an *under*-block, and the only failure mode in "
+          "the module that loses content rather than annoying a user. It is now an "
+          "interface: the integration supplies an `existence_probe`, and "
+          "`Policy.copy_verification` decides how a believed copy becomes one that may "
+          "be relied on. Anything short of a positive confirmation — no probe, "
+          "unanswerable, raising — reads as **absent**.")
+        a("")
+        a("| Condition | Copy verification | Sequences that lost content | Harmless "
+          "sequences stopped |")
+        a("|---|---|---:|---:|")
+        _label = {"trust": "`trust` (pre-fix baseline)",
+                  "probe_no_probe": "`probe`, no probe supplied",
+                  "probe_truthful": "`probe`, truthful probe",
+                  "assume_absent": "`assume_absent`"}
+        _cond = {"intact": "storage intact",
+                 "out_of_band": "**copy deleted out of band**"}
+        for condition in cv["conditions"]:
+            for arm in ("trust", "probe_no_probe", "probe_truthful", "assume_absent"):
+                row = A.get(f"{arm}/{condition}")
+                if not row:
+                    continue
+                a(f"| {_cond[condition]} | {_label[arm]} | {row['violations']} "
+                  f"({row['violation_rate']:.4f}) | {row['stopped_harmless']} "
+                  f"({row['over_block_rate']:.4f}) |")
+        a("")
+        ob_t, ob_p = A["trust/out_of_band"], A["probe_no_probe/out_of_band"]
+        in_t, in_p = A["trust/intact"], A["probe_no_probe/intact"]
+        a(f"**What the fix buys.** When something outside the guard removes the copy, "
+          f"the pre-fix reading lets **{ob_t['violations']}** sequences lose "
+          f"pre-existing content; failing closed lets **{ob_p['violations']}** — "
+          f"**{ob_t['violations'] - ob_p['violations']} under-blocks closed**. "
+          f"**What it costs.** It stops "
+          f"{ob_p['stopped_harmless'] - ob_t['stopped_harmless']} more sequences that "
+          f"would have lost nothing ({ob_t['over_block_rate']:.2%} → "
+          f"{ob_p['over_block_rate']:.2%} of all sequences). With storage intact the "
+          f"same trade is {in_t['violations']} → {in_p['violations']} violations against "
+          f"{in_t['over_block_rate']:.2%} → {in_p['over_block_rate']:.2%} over-blocks: "
+          f"the fix is not free even when nothing has gone wrong, because the guard "
+          f"cannot tell a healthy backup from a missing one without being told.")
+        a("")
+        a(f"**The floor no arm reaches past.** Every arm still allows "
+          f"{ob_p['violations']} losing sequences. Copy verification closes the hazards "
+          f"whose recoverability rested on a copy; it says nothing about the rest, and "
+          f"the remaining ones are the open items in LIMITATIONS.md (canonicalization, "
+          f"deeper composition search, manifest fidelity). A number that fell to zero "
+          f"here would mean the measurement was circular.")
+        a("")
+        a("**Limits on these rows.**")
+        for line in cv["limits"]:
+            a(f"- {line}")
+        a("")
+
     ext = r.get("external")
     if ext:
         b = ext["benign_traffic"]
@@ -597,7 +662,10 @@ def main() -> int:
                       # with a human reviewer in the loop.
                       ("coverage", "coverage-eval.json"),
                       ("coverage_loop", "agent-loop-coverage.json"),
-                      ("coverage_loop_human", "agent-loop-coverage-human.json")):
+                      ("coverage_loop_human", "agent-loop-coverage-human.json"),
+                      # I1b, 2026-11-14: verified copy tracking — what asking storage
+                      # catches, and what failing closed costs
+                      ("copy_verification", "copy-verification-eval.json")):
         path = RESULTS_JSON.parent / name
         if path.exists():
             r[key] = json.loads(path.read_text(encoding="utf-8"))

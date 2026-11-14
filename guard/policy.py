@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .classifier import Classification, Classifier, default_classifier
 from .core import Action, Decision, Verdict
-from .taint import TaintState, effect_of
+from .taint import PROBE_COPIES, TaintState, effect_of
 
 
 class Dial(IntEnum):
@@ -122,6 +122,16 @@ class Policy:
     # guard/taint.py (the mechanism); "table" = the original four-row _COMPOSITIONS
     # blocklist, kept only as the baseline guard/search.py measures against.
     composition: str = "derived"
+    # How clause 3 of the taint closure ("no other location holds this content") is
+    # answered — see guard/taint.py:surviving_copies. "probe" (the default) counts only
+    # copies `existence_probe` positively confirms; "assume_absent" counts none;
+    # "trust" is the pre-2026-11-14 structural bookkeeping, kept only as the baseline
+    # the fix is measured against. An integration that sets no probe gets "probe", which
+    # with no probe means every claimed copy reads as absent: fail-closed by default.
+    copy_verification: str = PROBE_COPIES
+    # Callable(location) -> bool | None. Only the INTEGRATION can see the storage the
+    # guard reasons about, so it supplies this; None/unanswerable/raising all fail closed.
+    existence_probe: object = None
 
     def grant(self, verb: str, by: str = "operator") -> "Policy":
         self.capabilities[verb] = Capability(verb, by)
@@ -162,7 +172,10 @@ class Guard:
         self.decisions: list[Decision] = []
         # the effect-taint world model. Every act the guard ALLOWS is folded into it,
         # and it is what derives composite irreversibility (guard/taint.py).
-        self.taint = TaintState()
+        self.taint = TaintState(
+            copy_verification=self.policy.copy_verification,
+            existence_probe=self.policy.existence_probe,
+        )
 
     # -- helpers ---------------------------------------------------------
     def _decide(self, action: Action, cls: Classification, verdict: Verdict,

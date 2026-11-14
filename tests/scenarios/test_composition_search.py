@@ -33,8 +33,16 @@ from guard.search import LOCATIONS, search, summarize
 
 
 def _isolated_guard():
-    """Composition isolated: the two gates that would otherwise pre-empt it are off."""
-    pol = Policy(dial=Dial.HOLD_IRREVERSIBLE, require_undo=False, read_before_destroy=False)
+    """Composition isolated: the two gates that would otherwise pre-empt it are off.
+
+    `existence_probe` confirms every location. These tests are about clauses 3 and 4 —
+    whether the DERIVATION finds a hazard — in a world whose storage is known good, so
+    the copy-verification dial (I1b, 2026-11-14) is held open deliberately rather than
+    left at its fail-closed default, which would make every one of them pass for the
+    wrong reason. The dial itself is tested in tests/scenarios/test_copy_verification.py.
+    """
+    pol = Policy(dial=Dial.HOLD_IRREVERSIBLE, require_undo=False, read_before_destroy=False,
+                 existence_probe=lambda _loc: True)
     (pol.grant("fs:*").grant("fs:append").grant("fs:overwrite").grant("fs:truncate")
         .grant("fs:copy").grant("fs:delete").grant("fs:write_new"))
     g = Guard(policy=pol, classifier=default_classifier(), session=Session())

@@ -41,9 +41,21 @@ against an independent concrete world model.
 **Known limits** (also in LIMITATIONS.md): the effect map is a declaration, so a verb
 whose real effect differs from its declaration is misjudged exactly as the manifest is;
 provenance is session-local, so content written by an EARLIER session reads as
-``preexisting`` (fail-closed, which can over-block); and "a copy exists" is tracked
-structurally from copy-style acts, not verified against storage, so a copy that a
-process outside the guard deleted still counts.
+``preexisting`` (fail-closed, which can over-block).
+
+**Copy verification** (added 2026-11-14, closing the module's last under-block). Until
+then "a copy exists" was tracked structurally from copy-style acts and never verified
+against storage, so a copy that a process OUTSIDE the guard had deleted still cleared
+clause 3 — the one failure mode here that loses data instead of annoying a user. Clause
+3 now asks ``surviving_copies``, which answers it under
+``TaintState.copy_verification``: ``"probe"`` (the default) counts only copies an
+integrator-supplied ``existence_probe`` positively confirms, treating unknown,
+unanswerable and probe failures alike as ABSENT; ``"assume_absent"`` counts none at all;
+``"trust"`` is the pre-2026-11-14 behaviour, kept reachable only as the baseline the fix
+is measured against. An integration that supplies no probe therefore gets the
+fail-closed reading, not the trusting one. The cost of that choice on benign traffic is
+measured in RESULTS.md rather than assumed — and it is a cost in holds, never in lost
+content.
 """
 from __future__ import annotations
 
@@ -115,6 +127,13 @@ def effect_of(qualified_verb: str, entry: ManifestEntry | None = None) -> str:
 AGENT = "agent"
 PREEXISTING = "preexisting"
 
+# How clause 3 ("no other location holds the same content") is answered. See
+# TaintState.surviving_copies.
+TRUST_COPIES = "trust"                  # structural bookkeeping is truth (baseline only)
+PROBE_COPIES = "probe"                  # the integrator's existence probe decides (default)
+ASSUME_COPIES_ABSENT = "assume_absent"  # no copy ever counts
+COPY_VERIFICATIONS = (TRUST_COPIES, PROBE_COPIES, ASSUME_COPIES_ABSENT)
+
 
 @dataclass(frozen=True)
 class Content:
@@ -137,7 +156,22 @@ class TaintState:
     touched: set[str] = field(default_factory=set)              # locations the session changed
     copy_destroyed: set[str] = field(default_factory=set)       # cids whose copy count we cut
     history: list[str] = field(default_factory=list)            # canonical world-changing acts
+    # how a believed copy is turned into a copy that may be relied on (surviving_copies)
+    copy_verification: str = PROBE_COPIES
+    # location -> bool|None: does it still hold content? Supplied by the INTEGRATOR,
+    # because only the integration can see the storage the guard reasons about. None (or
+    # a raise) means "cannot tell" and is failed closed.
+    existence_probe: object = None
+    unverified_copies: set[str] = field(default_factory=set)    # copies that did not confirm
+    copy_made: set[str] = field(default_factory=set)            # cids this session copied
+    probe_errors: int = 0                                       # probes that raised
     _counter: int = 0
+
+    def __post_init__(self) -> None:
+        if self.copy_verification not in COPY_VERIFICATIONS:
+            raise ValueError(
+                f"bad copy_verification: {self.copy_verification!r} "
+                f"(expected one of {COPY_VERIFICATIONS})")
 
     # -- maintenance -----------------------------------------------------
     def declare_preexisting(self, *locations: str) -> "TaintState":
@@ -175,10 +209,73 @@ class TaintState:
         self.locations.setdefault(content.cid, set()).add(loc)
 
     def copies_of(self, loc: str) -> set[str]:
+        """Locations this session BELIEVES hold the same content version as `loc`.
+
+        Structural bookkeeping only: it says a copy was made and not since removed by an
+        act the guard saw. It does NOT say the bytes are still there. Use
+        `surviving_copies` for the question clause 3 actually asks.
+        """
         content = self.at.get(loc)
         if content is None:
             return set()
         return set(self.locations.get(content.cid, set())) - {loc}
+
+    def probe_copy(self, loc: str) -> bool | None:
+        """Does `loc` still hold content, according to the integrator's probe?
+
+        True / False as the probe says; None when there is no probe, or the probe cannot
+        tell, or it RAISED. A probe that raises is not evidence of existence, so its
+        failure is indistinguishable from "unknown" here and is failed closed by
+        `surviving_copies` — a broken probe can never turn into a reason to allow.
+        """
+        if self.existence_probe is None:
+            return None
+        try:
+            answer = self.existence_probe(loc)
+        except Exception:                      # noqa: BLE001 - a broken probe is "unknown"
+            self.probe_errors += 1
+            return None
+        if answer is None:
+            return None
+        return bool(answer)
+
+    def surviving_copies(self, loc: str) -> set[str]:
+        """The copies that may be RELIED ON to survive the act about to happen.
+
+        This is the fix for the module's most dangerous assumption. Clause 3 asks
+        whether a copy survives; until 2026-11-14 the answer came from
+        `copies_of` alone, so a copy that a process OUTSIDE the guard had already
+        deleted still cleared the clause — an UNDER-block, and the one failure mode of
+        this module that loses data rather than annoying a user.
+
+        `copy_verification` selects how the question is answered:
+
+        * ``"trust"`` — the pre-2026-11-14 behaviour: structural bookkeeping is taken as
+          truth. Kept reachable, and measured, as the baseline the fix is compared
+          against; never the default.
+        * ``"probe"`` (default) — each candidate copy is put to the integrator's
+          `existence_probe`. Only a copy the probe positively confirms counts. Unknown,
+          unanswerable and probe failures all count as ABSENT, so an integration that
+          supplies no probe gets the fail-closed behaviour rather than the trusting one.
+        * ``"assume_absent"`` — no copy ever counts, whatever any probe says.
+
+        Failing closed here cannot lose data: it can only turn an ALLOW into a
+        REQUIRE_HUMAN on an act that replaces or destroys pre-existing content whose
+        only claimed backup is unverified. What it costs on benign traffic is measured
+        (RESULTS.md, "copy verification"), not assumed.
+        """
+        believed = self.copies_of(loc)
+        if not believed or self.copy_verification == TRUST_COPIES:
+            return believed if self.copy_verification == TRUST_COPIES else set()
+        if self.copy_verification == ASSUME_COPIES_ABSENT:
+            return set()
+        confirmed = set()
+        for candidate in sorted(believed):
+            if self.probe_copy(candidate) is True:
+                confirmed.add(candidate)
+            else:
+                self.unverified_copies.add(candidate)
+        return confirmed
 
     # -- the derivation --------------------------------------------------
     def effective_effect(self, action, effect: str) -> str:
@@ -217,16 +314,30 @@ class TaintState:
             return ""
         if content.provenance == AGENT:
             return ""                      # the agent authored it and can author it again
-        survivors = self.copies_of(loc)
+        survivors = self.surviving_copies(loc)
         if survivors:
-            return ""                      # a copy survives this act
-        session_made_it_worse = loc in self.touched or content.cid in self.copy_destroyed
+            return ""                      # a VERIFIED copy survives this act
+        unverified = self.copies_of(loc) if self.copy_verification != TRUST_COPIES else set()
+        # The session has removed the recoverability when it acted on this location, when
+        # it cut the copy count itself — or when the ONLY copy standing between this act
+        # and an irrecoverable loss is one the session made and cannot verify. That third
+        # case is what the copy-tracking fix adds: the canonical backup-then-delete
+        # sequence never touches the ORIGINAL location, so without it an unverifiable
+        # backup would still clear the derivation by falling through clause 4.
+        relies_on_unverified = bool(unverified) and content.cid in self.copy_made
+        session_made_it_worse = (loc in self.touched
+                                 or content.cid in self.copy_destroyed
+                                 or relies_on_unverified)
         if not session_made_it_worse:
             return ""
         if loc in self.touched:
             why = f"the session already acted on {loc}"
-        else:
+        elif content.cid in self.copy_destroyed:
             why = f"the session destroyed the only other copy of the content at {loc}"
+        else:
+            why = (f"the only copy of {loc} is one this session made, at "
+                   f"{', '.join(sorted(unverified))}, and its existence is unverified "
+                   f"(copy_verification={self.copy_verification})")
         return (f"{effect} of {loc} removes the last copy of content this session did not "
                 f"author, and {why} — individually reversible steps composing to an "
                 f"irrecoverable loss (derived, not listed)")
@@ -249,7 +360,7 @@ class TaintState:
         content = self.at.get(loc)
         if content is None or content.provenance == AGENT:
             return ""
-        if self.copies_of(loc):
+        if self.surviving_copies(loc):
             return ""
         return (f"{action.qualified_verb} is declared reversible because what it creates "
                 f"can be deleted, but {loc} already holds content this session did not "
@@ -271,6 +382,9 @@ class TaintState:
             # clause 3. This runs even when effective_effect rewrote create->replace,
             # because the act still copies — it just also destroyed what was there.
             self._place(loc, self._ensure(source))
+            # the recoverability of this content version now RESTS on a copy the session
+            # itself made; surviving_copies decides whether that copy may be relied on.
+            self.copy_made.add(self.at[loc].cid)
         elif effect == CREATE:
             self._place(loc, Content(self._new_cid(loc), AGENT))
         elif effect == EXTEND:

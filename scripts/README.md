@@ -1,6 +1,6 @@
 # Evaluation scripts (for inspection and re-derivation)
 
-These four scripts produced the external evaluation reported in `../RESULTS.md`. They are
+These scripts produced the external evaluation and the measured dials reported in `../RESULTS.md`. They are
 included here so the protocol can be audited. They aren't needed to reproduce the numbers,
 because the corpora and the independent model's labels are checked into `../tests/corpus/`.
 `python -m pytest tests/scenarios/test_external_eval.py` re-derives the verdicts offline.
@@ -35,14 +35,25 @@ That run doesn't use the network and doesn't make a model call.
   cost of trusting a manifest, because the manifest tier overrides the heuristics. It needs
   no model and no network. `python -m pytest tests/scenarios/test_coverage.py` re-derives
   every claim in `../RESULTS.md` that rests on it, offline.
+- **`eval_copy_verification.py`**: It prices the copy-verification dial. Every action
+  sequence up to depth 3 over 9 verbs × 3 locations runs through the guard under each
+  setting of `Policy(copy_verification=...)`, and separately through the concrete world
+  model in `../guard/search.py`, which nothing in the taint module imports. Two conditions
+  run: storage intact, and an external process deleting each copy the session makes right
+  after it is made — the event the pre-2026-11-14 structural tracking could not see. It
+  reports sequences that lost content and sequences stopped that would have lost nothing,
+  so the safety gain and its cost sit on one table. It needs no model and no network.
+  `python scripts/eval_copy_verification.py --selftest` checks the oracle and the arm
+  wiring; `python -m pytest tests/scenarios/test_copy_verification.py` asserts the
+  guard-level behaviour offline.
 
-All four scripts were written as helper scripts of the authoring automation, so they call
+All of these scripts were written as helper scripts of the authoring automation, so they call
 out through the shell to that instance's model utilities, `gu claude` and `gu llm-complete`.
 Anyone re-deriving from scratch has to substitute their own model call in `ask_model`, or in
 `ask_step` for the agent loop.
 Everything after `ask_model` in the scripts is plain standard-library Python.
 
-The paths inside all four scripts also resolve relative to a repository checkout. Each script
+The paths inside all of these scripts also resolve relative to a repository checkout. Each script
 finds the project root by walking up from its own location. `python scripts/eval_agentharm.py
 score` works from the repository root once `artifacts/` and the repository root are the same
 directory. In the published repository they are.
