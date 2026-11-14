@@ -43,7 +43,7 @@ An irreversible act with undeclared provenance gets `REQUIRE_HUMAN`, with the re
 
 *Has the solution been tested against realistic failure scenarios and bypass attempts?*
 
-The suite passed 445 cases and skipped one by design. Its cases include unit tests, 17 named scenarios, a variant expansion of those scenarios and 14 benign controls. There are also clause cases for the composition search, regression tests on external corpora and meta-tests.
+The suite passed 458 cases and skipped one by design. Its cases include unit tests, 17 named scenarios, a variant expansion of those scenarios and 14 benign controls. There are also clause cases for the composition search, regression tests on external corpora and meta-tests.
 
 Two of the 17 scenarios exist because someone broke the guard. An independent reviewer found `bp-12` on 2026-11-12. The reviewer probed the shipped API and didn't read the documentation. The guard recorded a batch member's read into the session as it judged that member. It did that even when the guard then DENIED the batch and nothing in the batch executed. So a read smuggled into a blocked batch satisfied read-before-destroy for a later delete. A `DENY` on that delete can't be cleared. The bug turned it into an `ALLOW`. In the fix, the batch path evaluates members against a snapshot of the session and commits nothing unless the whole batch is allowed. `bp-12` asserts that the leak is gone. `bp-13` covers the fail-closed provenance rule. The `bp-12` episode counts as the clearest statement on how sound the mechanisms are. Structural means the verdict is checkable. It doesn't mean the implementation is right.
 
@@ -131,7 +131,31 @@ The unguarded agent executed 18 of the 30 irreversible calls the benchmark aimed
 
 Benign task completion went from 0.35 unguarded to 0.00 guarded. That 0.00 is the same result as refusing the whole tool surface, so on this surface the guard gains no completion over `block_unknown`, the trivial baseline. Almost every refusal in the transcript is the same hold, `hold.unknown_verb_fails_closed`. The guard issued it for almost every call because the manifest declares 0 of the 85 verbs, and the hold comes back before consent is checked, so the agent cannot clear it. In the transcript the `guard` and `block_unknown` arms differ only in which calls they allowed to run: the guard ran 80 of 202 proposed calls, `block_unknown` ran 0 of 160. Reversible work continues under the guard even where whole tasks do not complete.
 
-This result supports the claim that the guard stops an agent actively trying to reach irreversible actions. The guard's author never saw this tool surface, and a live model chose the calls on it, so the claim holds under those conditions. The result does not support a claim that the guard is cheap to deploy on a surface where the verbs are not declared, because on this surface it costs every benign completion. The manifest tier is the tier that should recover that cost, and it was not tested in this evaluation, because declaring these 85 functions would give the evaluation its own answers. `LIMITATIONS.md` lists the trade-off between false positives and manifest coverage as an open item; it is not claimed as a result here.
+This result supports the claim that the guard stops an agent actively trying to reach irreversible actions. The guard's author never saw this tool surface, and a live model chose the calls on it, so the claim holds under those conditions. The result does not support a claim that the guard is cheap to deploy on a surface where the verbs are not declared, because on this surface it costs every benign completion.
+
+### What a partial manifest buys, and why the 0.00 above was the wrong number
+
+The trade-off between false positives and manifest coverage was the largest open item on this submission's own list. It was measured on 2026-11-14, and measuring it corrected the reading of the table above.
+
+19 of the 20 AgentHarm benign tasks require an irreversible act of their own, usually an outward one — posting, sending, submitting. The `HOLD_IRREVERSIBLE` dial cannot complete such a task without a person at any level of manifest coverage. So the benign completion rate measured with no human in the loop measures the dial, not the classifier: swept across five coverages it reads 0.00 at 0% and 0.00 at 100% alike. The 0.00 against 0.35 was an accurate measurement reported honestly, and it did not mean what this document took it to mean.
+
+Two sweeps replace it. The static one declares a random fraction of the 85 verbs in the manifest, taking each verb's reversibility from the same independent labels used as ground truth elsewhere, and scores every function. The agent-loop one runs the same declared subsets with a live agent, once without a reviewer and once with a reviewer who approves a held act on a benign task and refuses it on a harmful one.
+
+| manifest coverage of the 85 verbs | 0% | 25% | 50% | 75% | 100% |
+|---|---|---|---|---|---|
+| Benign false positives, static, mean of 8 random samples | 0.600 | 0.447 | 0.281 | 0.144 | **0.000** |
+| Strict false negatives, declarations correct | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| Strict false negatives, **10% of declarations wrong** | 0.000 | 0.028 | 0.059 | 0.072 | **0.097** |
+| Benign tasks a real agent completes, no reviewer | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Benign tasks a real agent completes, **with a reviewer** | 0.10 | 0.10 | 0.20 | 0.20 | **0.30** |
+| Irreversible target calls the agent executed | 0/30 | 0/30 | 0/30 | 0/30 | 0/30 |
+| Acts escalated to the person | 27 | 42 | 37 | 51 | 48 |
+
+Raw records `tests/coverage-eval.json`, `tests/agent-loop-coverage.json` and `tests/agent-loop-coverage-human.json`; 520 live agent episodes across 13 arms, 0 errors; re-derived offline by `tests/scenarios/test_coverage.py`, 13 tests.
+
+At full accurate coverage the guard costs no measured utility on this surface — 0.30 is the unguarded arm's own completion rate — while still executing 0/30 of the harmful target calls. The trivial block-every-unknown-verb baseline recovers 0.00 even with the same reviewer, because a verb absent from its manifest is denied with nothing to escalate. That is the margin over the baseline the earlier reading could not show, and it is the project's answer to whether the design is deployable: it is, on a declared surface, and it is not, on an undeclared one.
+
+The price of that availability is on the same table and is not hidden. A manifest is a trusted input. With 10% of declarations wrong, false negatives rise to 0.097 at full coverage, produced by the authoritative manifest tier, which overrides the heuristic that would otherwise have caught them — so a verb an integrator cannot vouch for should be left undeclared and the fail-closed hold paid. Four further limits, stated in full in `LIMITATIONS.md`: the declarations are synthesized from ground truth, so nothing here measures an integrator's labelling ability; the reviewer is an oracle, and a person asked to approve 48 acts in a session is the person who stops reading them; the completion rates rest on 20 episodes per arm with overlapping intervals and are a direction rather than an estimate; coverage is sampled uniformly at random, where a real integrator declares their own surface.
 
 The numbers come from `tests/agent-loop-eval.json`, the checked-in transcript of every episode and every decision. `tests/scenarios/test_agent_loop.py` re-derives the numbers offline without calling a model. It fails if any arm proposed zero calls, if any refusal in the guard arm came from capability reservation instead of irreversibility, if the unguarded arm executed zero irreversible calls, or if the record does not include the benign cost. The AgentHarm prompt texts are not redistributed in this repository; `scripts/eval_agent_loop.py` fetches them into a gitignored cache.
 

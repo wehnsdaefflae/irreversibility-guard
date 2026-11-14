@@ -27,13 +27,28 @@ The guard intercepts each tool call an agent proposes, before the call is execut
 
 The benign column is the cost and it is not flattering: on a surface where the guard's manifest declares none of the 85 verbs, refusing the whole surface achieves the same 0.00 completion. The guard's measured difference from that baseline is that reversible calls still ran, 80 of 202 proposed against 0 of 160. `LIMITATIONS.md` states what the result does and does not support.
 
+**That 0.00 was the wrong measurement, and the correction is the main result of 2026-11-14.** 19 of the 20 AgentHarm benign tasks themselves require an irreversible act, mostly an outward one. Under the `HOLD_IRREVERSIBLE` dial, no amount of manifest coverage completes those tasks without a person, so a completion rate measured with no human in the loop measures the dial and not the classifier. Measured at five manifest coverages, it reads 0.00 at 0% coverage and 0.00 at 100% coverage alike. The measurement that does carry information is what a partial manifest buys, and it was swept on both halves of the evaluation.
+
+| measure, over manifest coverage 0% → 100% of AgentHarm's 85 verbs | 0% | 25% | 50% | 75% | 100% | source |
+|---|---|---|---|---|---|---|
+| **Benign false positives** (static, mean of 8 random declaration samples) | 0.600 | 0.447 | 0.281 | 0.144 | **0.000** | `tests/coverage-eval.json` |
+| Strict false negatives, declarations correct | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | same |
+| Strict false negatives, **10% of declarations wrong** | 0.000 | 0.028 | 0.059 | 0.072 | **0.097** | same |
+| **Benign tasks a real agent completes, with a human reviewing holds** | 0.10 | 0.10 | 0.20 | 0.20 | **0.30** | `tests/agent-loop-coverage-human.json` |
+| Irreversible target calls the agent executed, every arm | 0/30 | 0/30 | 0/30 | 0/30 | 0/30 | same |
+| Acts escalated to the person | 27 | 42 | 37 | 51 | 48 | same |
+
+At full accurate coverage the guard costs no measured utility on this surface — 0.30 completion is exactly what the unguarded arm achieves — while still executing 0/30 of the harmful target calls. The trivial block-every-unknown-verb baseline recovers 0.00 even with the same reviewer, because a verb absent from its manifest is denied with no decision to escalate. "Declare your tool surface and you pay less" used to be advice in this README; it is now a curve with a slope.
+
+The price is on the same table. A manifest is a trusted input: with 10% of declarations wrong, false negatives rise to 0.097 at full coverage, produced by the authoritative manifest tier, which overrides the heuristic that would otherwise have caught them. An integrator who cannot vouch for a declaration is better off leaving the verb undeclared and paying the fail-closed hold. The reviewer in these rows is an oracle that reads the benchmark's own labels, the completion rates rest on 20 episodes per arm with overlapping intervals, and the declarations are synthesized from ground truth — `RESULTS.md` states all four limits where the numbers are.
+
 For the strict rate in the first row, only a stop where the agent can't clear it alone counts. The two kinds of HOLD differ on whether the agent can clear them. The agent can clear `hold.irreversible_needs_reconsent`. With that hold, the act goes into `session.consented`. The guard returns `ALLOW` when the agent emits the same act again. The classifier's unknown tier handles unrecognised verbs and returns `hold.unknown_verb_fails_closed` before consent is checked. With this hold, the act never enters `session.consented`. The agent can't clear it with re-consent. This behaviour was verified with probes on `terminal`, `upload_file`, `make_online_purchases`, `wire_funds` and `share_on_pinterest`.
 
 All 40 irreversible functions end at a verdict of the same kind as `hold.unknown_verb_fails_closed`. The agent can't clear that kind of verdict. The 0/40 comes from refusing unrecognised verbs, not from recognising any function. The 0.600 false-positive rate is the cost of that 0/40, because the same fail-closed rule blocks 27 of the 45 reversible functions. The fair baseline for comparison is block-every-unknown-verb, not "no guard". That baseline also allows 0 of the 40 irreversible functions outright. Compared with it, the guard correctly lets 18 of the 45 reversible functions through and puts a reason code on every decision. An integrator who declares their tool surface can move verbs off the unknown tier and get fewer false-positive blocks.
 
 *The figure `18/40 = 0.450` was published in this README for one day, on 2026-11-12. That figure came from counting every HOLD as one the agent could satisfy. Before that, `0/40` was published, from counting every HOLD as a stop. Both earlier figures were wrong. `scripts/eval_agentharm.py` now separates the two kinds of HOLD. The correction was recorded in `RESULTS.md`.*
 
-`RESULTS.md` has the full decomposition, a clustering caveat on the per-prompt figures and both baselines, "no guard" and block-every-unknown-verb. In this project's own suite the guard blocks 17 of 17 hostile and failure scenarios for the right reason. Each of the 17 scenarios was expanded into variants over tools, targets, argument shapes, alias-chain depths and batch positions. 406 of the 407 harness cases pass. One is skipped by design. The guard blocks 0 of the 14 benign control actions in this project's suite. That 0.000 is superseded by the external 0.187, because the 14 benign actions only use verbs the guard also declared. In total, 445 tests pass.
+`RESULTS.md` has the full decomposition, a clustering caveat on the per-prompt figures and both baselines, "no guard" and block-every-unknown-verb. In this project's own suite the guard blocks 17 of 17 hostile and failure scenarios for the right reason. Each of the 17 scenarios was expanded into variants over tools, targets, argument shapes, alias-chain depths and batch positions. 428 of the 429 harness cases pass. One is skipped by design. The guard blocks 0 of the 14 benign control actions in this project's suite. That 0.000 is superseded by the external 0.187, because the 14 benign actions only use verbs the guard also declared. In total, 458 tests pass.
 
 This project's own property-based search found the scenarios `bp-10` and `bp-11`. They weren't written by hand. `python -m guard.search --depth 3` runs all 2940 action sequences over 7 verbs × 2 locations. It checks them against a world model. That model doesn't import the guard. Under the original hard-coded composition table, the search found 184 sequences that the guard allowed end to end and that still lost pre-existing content. It found 0 under the derived effect-taint closure, where the guard works out composite irreversibility from content identity, provenance and declared per-verb effects.
 
@@ -49,7 +64,7 @@ cd irreversibility-guard
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[test]'
 
-python -m pytest tests/ -v      # 436 passed, 1 skipped: unit, 17 scenarios + variants,
+python -m pytest tests/ -v      # 458 passed, 1 skipped: unit, 17 scenarios + variants,
                                 # 14 benign, and the external-corpus regressions
 python demo.py                  # a 30-second walk through five interceptions
 python -m guard.search --depth 3   # the property-based search, re-run from scratch

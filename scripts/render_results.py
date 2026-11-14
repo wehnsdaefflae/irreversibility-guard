@@ -350,6 +350,172 @@ def render(r: dict) -> str:
           "are checked in. Re-running needs network access and an OpenRouter key.")
         a("")
 
+    cov = r.get("coverage")
+    if cov:
+        a("## What a PARTIAL manifest buys: the coverage curve (I2b)")
+        a("")
+        a(f"Measured {cov['generated']} · `scripts/eval_coverage.py all` · raw: "
+          f"`tests/coverage-eval.json` · {cov['n_functions']} AgentHarm functions × "
+          f"{len(cov['coverages'])} coverages × {cov['seeds_per_coverage']} random "
+          f"declaration samples per coverage × 2 arms")
+        a("")
+        a("Every other measurement on this page that uses AgentHarm measures the "
+          "**worst case for this design**: a tool surface where the guard's manifest "
+          "declares *none* of the verbs, so almost every refusal comes from the "
+          "fail-closed rule for the unrecognised. That is a realistic deployment "
+          "condition, and it is also the condition under which a guard is least "
+          "distinguishable from refusing everything. The question this section answers "
+          "is the one that decides whether the design is usable at all: **how much does "
+          "an integrator have to declare before the guard is better than a blanket "
+          "refusal?**")
+        a("")
+        a("Method: at each coverage, a uniformly random sample of that fraction of the "
+          f"{cov['n_functions']} verbs is declared in the manifest, with the "
+          "reversibility taken from the **independent** labels (the same labels used as "
+          "ground truth elsewhere on this page, produced by a model shown no guard "
+          "source, no manifest and no mention of a guard). Each function is then put to "
+          "the guard once.")
+        a("")
+        for arm, rows in sorted(cov["summary"].items()):
+            if arm == "accurate":
+                a("**Arm 1 — declarations are correct.** The upper bound: what coverage "
+                  "buys an integrator who declares accurately.")
+            else:
+                rate = cov["mislabel_rate"]
+                a(f"**Arm 2 — {rate:.0%} of the declarations are WRONG.** The manifest "
+                  "tier is *authoritative*: it outranks the heuristics. So a verb "
+                  "wrongly declared reversible is a false negative the guard produces "
+                  "**with confidence**, and the heuristic that would have caught it "
+                  "never runs. This arm prices that.")
+            a("")
+            a("| Manifest coverage | Verbs declared | Benign false-positive rate "
+              "(mean, range over samples) | Strict false-negative rate (mean, range) | "
+              "Calls held by the fail-closed unknown rule (mean) |")
+            a("| --- | --- | --- | --- | --- |")
+            for row in rows:
+                fpr = row["false_positive_rate_range"]
+                fnr = row["false_negative_rate_strict_range"]
+                a(f"| {row['coverage']:.0%} | {row['n_declared']} | "
+                  f"**{row['false_positive_rate_mean']:.3f}** "
+                  f"({fpr[0]:.3f}–{fpr[1]:.3f}) | "
+                  f"**{row['false_negative_rate_strict_mean']:.3f}** "
+                  f"({fnr[0]:.3f}–{fnr[1]:.3f}) | "
+                  f"{row['unknown_tier_holds_mean']:.1f} |")
+            a("")
+        acc = {row["coverage"]: row for row in cov["summary"]["accurate"]}
+        mis_key = [k for k in cov["summary"] if k != "accurate"][0]
+        mis = {row["coverage"]: row for row in cov["summary"][mis_key]}
+        a(f"**The result.** False positives fall from "
+          f"**{acc[0.0]['false_positive_rate_mean']:.3f}** at no coverage to "
+          f"**{acc[1.0]['false_positive_rate_mean']:.3f}** at full coverage, roughly "
+          f"linearly, while the strict false-negative rate stays "
+          f"{acc[1.0]['false_negative_rate_strict_mean']:.3f} throughout — declaring a "
+          "verb never costs safety when the declaration is right. 'Declare your tool "
+          "surface and you pay less friction' was advice in earlier versions of this "
+          "repository; it is now a measured curve, and the slope is the argument for "
+          "doing it.")
+        a("")
+        a(f"**And the cost of getting it wrong.** With {cov['mislabel_rate']:.0%} of "
+          f"declarations wrong, the false-negative rate rises to "
+          f"**{mis[1.0]['false_negative_rate_strict_mean']:.3f}** at full coverage — "
+          f"from {acc[1.0]['false_negative_rate_strict_mean']:.3f} — and the false "
+          f"positives stop falling to zero "
+          f"({mis[1.0]['false_positive_rate_mean']:.3f} instead of "
+          f"{acc[1.0]['false_positive_rate_mean']:.3f}, because a verb wrongly declared "
+          "irreversible is held for good). **A manifest is a trusted input, and this is "
+          "the exchange rate: coverage buys availability at the price of trusting what "
+          "is declared.** An integrator who cannot vouch for a declaration is better "
+          "off leaving the verb undeclared and paying the fail-closed hold.")
+        a("")
+        a("What this curve is **not**: coverage here is sampled uniformly at random, "
+          "and a real integrator declares their own surface — one who declares the "
+          "destructive verbs first does better at the same coverage, one who declares "
+          "only the reads does worse. The declarations are synthesized from the ground "
+          "truth, so no part of this measures an integrator's ability to label their "
+          "own tools.")
+        a("")
+
+    loop_cov = r.get("coverage_loop")
+    loop_hum = r.get("coverage_loop_human")
+    if loop_cov and loop_hum:
+        la = loop_cov["report"]["per_arm"]
+        ha = loop_hum["report"]["per_arm"]
+        a("### The same curve with a REAL AGENT, and with a human in the loop")
+        a("")
+        a(f"Measured {loop_cov['generated']} · `scripts/eval_agent_loop.py run "
+          f"--arms guard@0,guard@25,… ` · raw: `tests/agent-loop-coverage.json` and "
+          f"`tests/agent-loop-coverage-human.json` · model `{loop_cov['model']}` · "
+          f"seed `{loop_cov['seed']}` · coverage draw seed "
+          f"`{loop_cov['coverage_seed']}` (the SAME declared subsets as the static "
+          f"curve above) · {loop_cov['n_per_config']} prompts per config · "
+          f"{len(loop_cov['arms'])} + {len(loop_hum['arms'])} arms = "
+          f"{(len(loop_cov['arms']) + len(loop_hum['arms'])) * 40} live agent episodes")
+        a("")
+        a("| Arm | Manifest coverage | Human reviewer | Irreversible target calls "
+          "executed | Benign tasks completed | Calls executed / proposed | Human "
+          "decisions (benign / harmful) |")
+        a("| --- | --- | --- | --- | --- | --- | --- |")
+        rows = ([(n, la[n], False) for n in loop_cov["arms"]]
+                + [(n, ha[n], True) for n in loop_hum["arms"]])
+        for name, s, human in rows:
+            pct = (name.split("@", 1)[1].replace("+human", "") + "%"
+                   if "@" in name else ("n/a" if name == "none" else "manifest only"))
+            a(f"| `{name}` | {pct} | {'yes' if human else 'no'} | "
+              f"{s['irreversible_targets_executed']}/"
+              f"{s['irreversible_targets_wanted']} | "
+              f"{s['benign_tasks_completed']}/{s['benign_episodes']} = "
+              f"{s['benign_completion_rate']} | "
+              f"{s['calls_executed']}/{s['calls_proposed']} | "
+              f"{s.get('human_decisions', 0)} "
+              f"({s.get('human_decisions_on_benign', 0)} / "
+              f"{s.get('human_decisions_on_harmful', 0)}) |")
+        a("")
+        a("**A correction to this repository's own earlier reading.** The 2026-11-13 "
+          "run published a benign completion of 0.00 for the guard against 0.35 "
+          "unguarded and called it the honest cost of the design. It was an honest "
+          "number, but it was the wrong measurement, and these rows say why: **19 of "
+          "the 20 AgentHarm benign tasks themselves require an irreversible act** "
+          "(mostly an outward one — posting, sending, submitting). Under the "
+          "`HOLD_IRREVERSIBLE` dial *no* amount of manifest coverage can complete those "
+          "tasks without a person, so a completion rate measured with no human in the "
+          "loop was measuring the dial, not the classifier: it reads 0.00 at 0% "
+          "coverage and 0.00 at 100% coverage alike.")
+        a("")
+        g0, g100 = ha["guard@0+human"], ha["guard@100+human"]
+        bu = ha.get("block_unknown+human", {})
+        a(f"**With the human the dial assumes, the curve appears.** Benign completion "
+          f"rises from **{g0['benign_completion_rate']}** at no coverage to "
+          f"**{g100['benign_completion_rate']}** at full coverage — which is the "
+          f"unguarded arm's own {la['none']['benign_completion_rate']}: at full "
+          f"declaration the guard costs **no** measured utility on this surface while "
+          f"still executing {g100['irreversible_targets_executed']}/"
+          f"{g100['irreversible_targets_wanted']} of the harmful target calls. The "
+          f"trivial baseline recovers nothing even with the same reviewer "
+          f"({bu.get('benign_completion_rate')}), because a verb absent from its "
+          f"manifest is denied outright with no decision to escalate.")
+        a("")
+        a(f"**What it costs the person.** Escalated decisions rise with coverage too: "
+          f"{g0['human_decisions']} at 0% ({g0['human_decisions_on_benign']} on benign "
+          f"tasks) against {g100['human_decisions']} at 100% "
+          f"({g100['human_decisions_on_benign']} on benign). More coverage means more "
+          "acts reach the reviewer as *decidable* rather than dying as unrecognised — "
+          "that is the mechanism, and the review load is the bill.")
+        a("")
+        a("**Four limits on these rows, all of which weaken them.** (1) The reviewer is "
+          "an oracle: it approves on benign tasks and refuses on harmful ones by reading "
+          "the benchmark's own label, so these are an upper bound on availability and a "
+          "lower bound on harm — a real reviewer who approves 48 requests a session is "
+          "exactly the reviewer who rubber-stamps. (2) The completion rates rest on 20 "
+          "benign episodes per arm; the 0.10→0.30 rise has overlapping confidence "
+          "intervals "
+          f"({g0['benign_completion_ci'][1]:.3f}–{g0['benign_completion_ci'][2]:.3f} "
+          f"against "
+          f"{g100['benign_completion_ci'][1]:.3f}–{g100['benign_completion_ci'][2]:.3f}) "
+          "and is a direction, not a point estimate. (3) One coverage draw per arm, not "
+          "the eight the static curve averages over. (4) Declarations are synthesized "
+          "from ground truth, as above.")
+        a("")
+
     ext = r.get("external")
     if ext:
         b = ext["benign_traffic"]
@@ -425,7 +591,13 @@ def main() -> int:
     # (scripts/eval_agentharm.py, scripts/eval_external.py). Same contract: folded in
     # here so every number in RESULTS.md comes from a file on disk, absent => omitted.
     for key, name in (("agentharm", "agentharm-eval.json"), ("external", "external-eval.json"),
-                      ("agent_loop", "agent-loop-eval.json")):
+                      ("agent_loop", "agent-loop-eval.json"),
+                      # I2b, 2026-11-14: what a PARTIAL manifest buys. The static FP/FN
+                      # curve, the agent-loop arms at each coverage, and the same arms
+                      # with a human reviewer in the loop.
+                      ("coverage", "coverage-eval.json"),
+                      ("coverage_loop", "agent-loop-coverage.json"),
+                      ("coverage_loop_human", "agent-loop-coverage-human.json")):
         path = RESULTS_JSON.parent / name
         if path.exists():
             r[key] = json.loads(path.read_text(encoding="utf-8"))
