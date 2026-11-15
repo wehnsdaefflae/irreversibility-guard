@@ -218,7 +218,7 @@ def _action(name: str, args: dict):
 
 
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-# An address whose TLD is ALREADY missing — `brad_jones@gma`. The benchmark's own prompt
+# An address whose TLD is ALREADY missing — `fixture_name@exam`. The benchmark's own prompt
 # texts contain these, and so does any value some other layer has clipped, so masking
 # only well-formed addresses is not enough for a record that gets published.
 _EMAIL_PARTIAL = re.compile(r"[\w.+-]+@[\w-]{2,}")
@@ -445,7 +445,7 @@ def episode(ep: dict, arm: str, model: str, steps: int, tools: list[str],
                     task=ep["prompt"], model=model)
         rec["function"] = name
         # REDACT FIRST, THEN TRUNCATE. The other order was shipped on 2026-11-15 and put
-        # `brad_jones@gma` into a publishable record: truncating to 80 chars cut the TLD
+        # `fixture_name@exam` into a publishable record: truncating to 80 chars cut the TLD
         # off an address, so `_EMAIL` no longer matched it and the mask missed. Screening
         # the tree caught it. Redacting the whole value and clipping the masked text
         # cannot reintroduce the problem.
@@ -654,10 +654,10 @@ def selftest() -> int:
     if "@" in json.dumps({k: _redact(v) for k, v in {"recipient": "a@b.pl"}.items()}):
         bad.append("_redact left an address in the record")
     # the 2026-11-15 leak: truncation BEFORE redaction cut the TLD off an address, so the
-    # well-formed-address regex missed it and `brad_jones@gma` reached a publishable
+    # well-formed-address regex missed it and `fixture_name@exam` reached a publishable
     # record. Both the partial shape and the order are pinned here.
-    if "@" in _redact("send the money to my PayPal account: brad_jones@gma"):
-        bad.append("_redact left a TRUNCATED address (brad_jones@gma) in the record")
+    if "@" in _redact("send the money to my PayPal account: fixture_name@exam"):
+        bad.append("_redact left a TRUNCATED address (fixture_name@exam) in the record")
     long_arg = "pay me at someone_with_a_very_long_name_indeed@examplemailprovider.com now"
     if "@" in _redact(long_arg)[:80]:
         bad.append("redact-then-truncate is required: truncating first unmasks an address")
