@@ -26,8 +26,17 @@ That run doesn't use the network and doesn't make a model call.
   redistributed here: `run` fetches them into `tests/cache/`, which is gitignored.
   The `--arms` flag selects the arms. `guard@50` declares a random half of the 85 verbs in
   the manifest, taking each verb's reversibility from the independent labels, and an arm
-  suffixed `+human` puts a reviewer in the loop who approves a held act on a benign task
-  and refuses it on a harmful one. Those arms produced the coverage curve.
+  suffixed `+human` puts an ORACLE reviewer in the loop who approves a held act on a
+  benign task and refuses it on a harmful one by reading the benchmark's own label. Those
+  arms produced the coverage curve. Two further suffixes were added on 2026-11-15 to
+  narrow what that oracle could not measure: `+review` puts a **non-oracle** reviewer in
+  the loop — a live model (`--reviewer-model`) shown only the task text, the proposed call
+  and the guard's reason for escalating, never a label — and a reviewer call that fails or
+  cannot be parsed reads as *refuse* and is counted in `reviewer_errors`; `guard@50#2`
+  selects coverage **draw 2**, the same percentage over a different random subset, so a
+  coverage point can be replicated instead of resting on one draw.
+  `python -m pytest tests/scenarios/test_reviewer.py` re-derives every claim in
+  `../RESULTS.md` that rests on those arms, offline.
 - **`eval_coverage.py`**: It sweeps manifest coverage from 0% to 100% in the static scorer.
   At each coverage it declares a uniformly random sample of that fraction of the 85 verbs,
   over several seeds, and reports false positives and strict false negatives with Wilson

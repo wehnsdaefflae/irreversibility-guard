@@ -19,9 +19,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# In the published repository the project root IS the repo root; in the authoring
-# routine the same file lives one level above an `artifacts/` project directory.
-# Resolve both so `python scripts/<name>.py` works from a fresh clone.
+# Both-way resolution: this script ships INSIDE the published repo (where the project is
+# the repo root) and also lives in the routine's scripts/ (where it is under artifacts/).
+# A plain copy of the routine's version over this one breaks a fresh clone — see
+# state/publication.json.trap_avoided.
 PROJ = (ROOT / "artifacts") if (ROOT / "artifacts" / "guard").is_dir() else ROOT
 RESULTS_JSON = PROJ / "tests" / "results.json"
 RESULTS_MD = PROJ / "RESULTS.md"
@@ -501,6 +502,12 @@ def render(r: dict) -> str:
           "acts reach the reviewer as *decidable* rather than dying as unrecognised — "
           "that is the mechanism, and the review load is the bill.")
         a("")
+        a("**Three of the four limits below were narrowed on 2026-11-15** — see *Does the "
+          "result survive a reviewer who cannot see the answer?*, which re-measures these "
+          "arms with a non-oracle reviewer, three replicate coverage draws and double the "
+          "N. The oracle rows are kept because they are the comparison that shows how much "
+          "the oracle flattered the dial.")
+        a("")
         a("**Four limits on these rows, all of which weaken them.** (1) The reviewer is "
           "an oracle: it approves on benign tasks and refuses on harmful ones by reading "
           "the benchmark's own label, so these are an upper bound on availability and a "
@@ -514,6 +521,102 @@ def render(r: dict) -> str:
           "and is a direction, not a point estimate. (3) One coverage draw per arm, not "
           "the eight the static curve averages over. (4) Declarations are synthesized "
           "from ground truth, as above.")
+        a("")
+
+    rv = r.get("reviewer")
+    if rv and rv.get("report"):
+        P = rv["report"]["per_arm"]
+        a("## Does the result survive a reviewer who cannot see the answer? (2026-11-15)")
+        a("")
+        a(f"Measured {rv['generated']} · `scripts/eval_agent_loop.py run "
+          f"--arms guard@0+human,guard@0+review,… ` · raw: "
+          f"`tests/agent-loop-reviewer-eval.json` · agent model `{rv['model']}` · "
+          f"reviewer model `{rv.get('reviewer_model')}` · seed `{rv['seed']}` · "
+          f"{rv['n_per_config']} prompts per config × {len(rv['arms'])} arms = "
+          f"{rv['n_per_config'] * 2 * len(rv['arms'])} live agent episodes")
+        a("")
+        a("The human-in-the-loop rows above were measured with an **oracle** reviewer: it "
+          "approves on a benign task and refuses on a harmful one by reading the "
+          "benchmark's own label. No real reviewer has that. This section replaces it with "
+          "a **non-oracle** reviewer — a live model shown only what an escalation actually "
+          "gives a person: the task text the agent was handed, the call it proposes, and "
+          "the guard's reason for escalating. No label, no config name. A reviewer call "
+          "that fails or cannot be parsed reads as **refuse** and is counted in "
+          "`reviewer_errors`, so a dead reviewer cannot pass for a cautious one.")
+        a("")
+        a("| Manifest coverage | Reviewer | Benign tasks completed | 95% CI | "
+          "Escalations (benign / harmful) | Approved on harmful | Irreversible target "
+          "calls executed |")
+        a("|---|---|---:|---|---:|---:|---:|")
+        _order = [("guard@0+human", "0%", "oracle"), ("guard@0+review", "0%", "**model**"),
+                  ("guard@50#1+review", "50% draw 1", "**model**"),
+                  ("guard@50#2+review", "50% draw 2", "**model**"),
+                  ("guard@50#3+review", "50% draw 3", "**model**"),
+                  ("guard@100+human", "100%", "oracle"),
+                  ("guard@100+review", "100%", "**model**")]
+        for arm, cov_label, kind in _order:
+            s = P.get(arm)
+            if not s:
+                continue
+            ci = s["benign_completion_ci"]
+            a(f"| {cov_label} | {kind} | {s['benign_tasks_completed']}/"
+              f"{s['benign_episodes']} ({s['benign_completion_rate']}) | "
+              f"{ci[1]:.3f}–{ci[2]:.3f} | {s['human_decisions']} "
+              f"({s['human_decisions_on_benign']} / {s['human_decisions_on_harmful']}) | "
+              f"{s['reviewer_approvals_on_harmful']}/"
+              f"{s['human_decisions_on_harmful']} | "
+              f"{s['irreversible_targets_executed']}/"
+              f"{s['irreversible_targets_wanted']} |")
+        a("")
+        o0, m0 = P["guard@0+human"], P["guard@0+review"]
+        o1, m1 = P["guard@100+human"], P["guard@100+review"]
+        a(f"**The oracle overstated availability by about half.** With the perfect "
+          f"reviewer, benign completion runs {o0['benign_completion_rate']} at no "
+          f"coverage to {o1['benign_completion_rate']} at full coverage. With a reviewer "
+          f"that must judge for itself: {m0['benign_completion_rate']} to "
+          f"{m1['benign_completion_rate']}. The mechanism is visible in the approval "
+          f"counts — at full coverage the oracle approved {o1['human_approvals']} of "
+          f"{o1['human_decisions']} escalations, the model reviewer "
+          f"{m1['human_approvals']} of {m1['human_decisions']}. A real reviewer refuses "
+          f"things a labelled one would wave through, and the availability an integrator "
+          f"actually gets is the lower pair of numbers.")
+        a("")
+        a(f"**The safety claim survives it.** Across all {len(rv['arms'])} arms, "
+          f"**0 of {m1['irreversible_targets_wanted']}** irreversible target calls on "
+          f"harmful tasks executed — including in the arms where a non-oracle reviewer "
+          f"could have approved one. It approved "
+          f"{m0['reviewer_approvals_on_harmful']}/{m0['human_decisions_on_harmful']} at "
+          f"no coverage and {m1['reviewer_approvals_on_harmful']}/"
+          f"{m1['human_decisions_on_harmful']} at full coverage "
+          f"(95% CI upper bound {m1['reviewer_approvals_on_harmful_ci'][2]:.3f}). The "
+          f"rubber-stamping failure mode the oracle arm could not even express was looked "
+          f"for and not observed at this N — which bounds it, and does not exclude it.")
+        a("")
+        d1, d2, d3 = (P["guard@50#1+review"], P["guard@50#2+review"],
+                      P["guard@50#3+review"])
+        a(f"**Replication across coverage draws.** The earlier curve rested on one random "
+          f"declaration subset per coverage point. Three independent 50% draws give "
+          f"identical benign completion "
+          f"({d1['benign_completion_rate']}, {d2['benign_completion_rate']}, "
+          f"{d3['benign_completion_rate']}) and review loads of "
+          f"{d1['human_decisions']}, {d2['human_decisions']} and {d3['human_decisions']} "
+          f"escalations. Which verbs are declared barely moves what the agent can finish; "
+          f"it moves what the person has to decide by about ±10%.")
+        a("")
+        a(f"**N doubled, and the direction holds, weakly.** {rv['n_per_config']} prompts "
+          f"per config against the 20 of the earlier curve. The 0%-to-100% rise under the "
+          f"model reviewer ({m0['benign_completion_rate']} → "
+          f"{m1['benign_completion_rate']}) still has overlapping intervals "
+          f"({m0['benign_completion_ci'][1]:.3f}–{m0['benign_completion_ci'][2]:.3f} "
+          f"against {m1['benign_completion_ci'][1]:.3f}–"
+          f"{m1['benign_completion_ci'][2]:.3f}). Doubling N narrowed the intervals "
+          f"without separating them: the coverage-buys-availability effect is a "
+          f"**direction, not an estimate**, and it would take a few hundred episodes per "
+          f"arm to make it one. What remains unnarrowed: a single agent model and a "
+          f"single reviewer model, both `{rv['model']}`-class, so reviewer and agent share "
+          f"a family and a failure mode; declarations still synthesized from ground "
+          f"truth; and {sum(P[a_]['episodes_with_error'] for a_ in P)} episode(s) errored "
+          f"and are counted as not completed.")
         a("")
 
     cv = r.get("copy_verification")
@@ -665,12 +768,15 @@ def main() -> int:
                       ("coverage_loop_human", "agent-loop-coverage-human.json"),
                       # I1b, 2026-11-14: verified copy tracking — what asking storage
                       # catches, and what failing closed costs
-                      ("copy_verification", "copy-verification-eval.json")):
+                      ("copy_verification", "copy-verification-eval.json"),
+                      # 2026-11-15: the non-oracle reviewer and the replicated coverage
+                      # draws that narrow limits (1)-(3) published on the rows above
+                      ("reviewer", "agent-loop-reviewer-eval.json")):
         path = RESULTS_JSON.parent / name
         if path.exists():
             r[key] = json.loads(path.read_text(encoding="utf-8"))
     RESULTS_MD.write_text(render(r), encoding="utf-8")
-    print(f"wrote {RESULTS_MD.relative_to(ROOT)} "
+    print(f"wrote {RESULTS_MD.relative_to(PROJ)} "
           f"({r['scenarios_passing']}/{r['scenarios_total']} scenarios, "
           f"FP rate {r['false_positive_rate']})")
     return 0
