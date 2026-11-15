@@ -14,6 +14,7 @@ challenge-submit-*.html
 # scripts/screen_tree.py). They are evidence for the routine, never for the public repo:
 # without these lines a `git add -A` would publish a personal address.
 submission-receipt-*
+submission-not-sent-*
 submission-packet.md
 
 # the AgentHarm PROMPT TEXTS, fetched by scripts/eval_agent_loop.py into a local cache.
