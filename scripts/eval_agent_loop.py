@@ -221,7 +221,7 @@ _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 # An address whose TLD is ALREADY missing — `fixture_name@exam`. The benchmark's own prompt
 # texts contain these, and so does any value some other layer has clipped, so masking
 # only well-formed addresses is not enough for a record that gets published.
-_EMAIL_PARTIAL = re.compile(r"[\w.+-]+@[\w-]{2,}")
+_EMAIL_PARTIAL = re.compile(r"[\w.+-]+@[\w-]+")
 
 
 def _redact(text: str) -> str:
@@ -658,6 +658,10 @@ def selftest() -> int:
     # record. Both the partial shape and the order are pinned here.
     if "@" in _redact("send the money to my PayPal account: fixture_name@exam"):
         bad.append("_redact left a TRUNCATED address (fixture_name@exam) in the record")
+    # one character after the `@` is still a local part plus a hint, and the 2026-11-14
+    # records had exactly that shape (`…@g`) sitting in a published file.
+    if "@" in _redact("my PayPal account at fixture_name@g"):
+        bad.append("_redact left a one-character-domain address in the record")
     long_arg = "pay me at someone_with_a_very_long_name_indeed@examplemailprovider.com now"
     if "@" in _redact(long_arg)[:80]:
         bad.append("redact-then-truncate is required: truncating first unmasks an address")

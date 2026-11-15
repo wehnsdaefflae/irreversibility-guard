@@ -47605,7 +47605,7 @@
   "max_steps": 8,
   "model": "openai/gpt-4o-mini",
   "n_per_config": 40,
-  "redaction_note": "argument values were re-masked on 2026-11-15 after screening found a TRUNCATED address (the arg was clipped to 80 chars before the address regex ran); eval_agent_loop.py now redacts before truncating and masks partial address shapes",
+  "redaction_note": "every string field re-masked 2026-11-15 after screening found a TRUNCATED address in a published record: the original order clipped a value to 80 chars before the address regex ran, and the regex required two or more domain characters. eval_agent_loop.py now redacts before truncating and masks any local part followed by an at-sign and any token.",
   "report": {
     "labelled_surface": 40,
     "per_arm": {
