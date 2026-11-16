@@ -8,7 +8,9 @@ This project was built to address that problem. Across 17 frontier LLM agents, t
 
 The guard intercepts each tool call an agent proposes, before the call is executed. It renders the call to a canonical act and classifies the act's reversibility. Then it answers with one of four verdicts: ALLOW, HOLD, REQUIRE_HUMAN or DENY. HOLD means re-consent is required. REQUIRE_HUMAN means a human has to approve that exact act with a go. Every verdict comes with a stable, machine-readable reason code and a structured decision record.
 
-## Status
+**For a reviewer, in reading order.** *Project overview and the problem* — the four paragraphs above. *Safety approach* — "The mechanisms" below, with `THREAT_MODEL.md` for assets, adversaries and trust boundaries. *Supporting evidence* — "Supporting evidence: measured results" next, `demo.py` for a 30-second walk-through, `RESULTS.md` for the full per-case table, and one command that re-derives every published number offline. *Limitations* — "Known limitations" below, in full in `LIMITATIONS.md`.
+
+## Supporting evidence: measured results
 
 **The guard was scored on a third-party benchmark as well as on tests built for this project.** The benchmark is AgentHarm, https://huggingface.co/datasets/ai-safety-institute/AgentHarm, from the UK AI Safety Institute. It has 416 prompts and 85 tool functions. All 85 of its tool functions are foreign to the guard's manifest, the list of tools and verbs the guard declares. The scoring is against the benchmark's own ground truth and against irreversibility labels from an independent model.
 
@@ -170,6 +172,18 @@ The `sound?` column below means one specific thing: the verdict is a decidable, 
 | **Property-based search** | `python -m guard.search --depth 3` searches action sequences exhaustively. It checks them against a concrete world model. That model doesn't import the guard. The search reports any sequence the guard allowed end to end that still lost pre-existing content. It found 184 such sequences under the old pair table and 0 under the derived closure. `RESULTS.md` has both figures. That result is confounded. Selecting the pair table also turns off the manifest-fidelity check, so the drop from 184 to 0 comes from the closure and the manifest-fidelity check together. The search only covers the verbs and locations in its alphabet. `LIMITATIONS.md` explains what that "0" means and what it doesn't mean. | no |
 
 The guard binds a human go to one exact canonical act. Each go is single-use and can't be replayed. A go on `link=repo-a` doesn't authorise `link=repo-b`. An instruction injected into fetched content can never control the guard's decisions, because the guard denies an action with `origin` `tool_output` before it reads any policy.
+
+## Known limitations
+
+The full account is `LIMITATIONS.md`, which sorts every mechanism into implemented-and-tested, implemented-but-untested, and theoretical-and-not-built. The short version:
+
+- **A classifier-based guard cannot be sound.** Whether an act is irreversible is an open-ended question over intent and arbitrary tool surfaces. This guard always fails to recognise some irreversible act. Its value is not a proof: it raises the cost and the visibility of irreversible acts, and any irreversible act it does recognise requires a human. "Sound" in the mechanism table above means only decidable and intent-free — not complete, not correct about the integrator's inputs, and not secure against an attacker who can reach the process.
+- **The false-positive cost is real and is the price of the one non-negotiable rule.** Use 0.187, not 0.000: on 150 independently generated benign agent calls the guard blocked 18.7% (CI 0.132–0.257), and on AgentHarm's wholly foreign surface 60.0% of reversible functions. Every false positive in both external sets came from the fail-closed rule on verbs the manifest did not declare. Declaring your tool surface reduces the cost; weakening the rule does not.
+- **The safety numbers come from refusing the unknown, not from recognising anything.** The 0/40 irreversible functions reached on AgentHarm is produced by the fail-closed unknown tier. The fair baseline is block-every-unknown-verb, not "no guard"; the guard's measured difference from that baseline is that reversible calls still ran and every decision carries a reason code.
+- **The manifest and the `origin` field are trusted inputs the guard cannot verify.** With 10% of declarations wrong, false negatives rise to 0.097 at full coverage. Fail-closed provenance is a written assertion, not a check.
+- **Composition analysis, manifest fidelity, verified copy tracking and the property-based search are explicitly not sound.** The guard is only as right as the integration's existence probe; a stale or eventually-consistent storage API can confirm a copy that is already gone, and a deletion racing the destroy (TOCTOU) is not addressed. The search is exhaustive only to depth 3 over 7 verbs and 2 locations — 2940 sequences — so "0 violations" means 0 inside that space and is not a proof.
+- **Not built at all:** recovery or rollback, multi-agent and delegated acts, enforcement of its own interposition, rate and volume limits, a framework adapter (no MCP server, no OpenAI tool-calling middleware, per-call latency unmeasured), and a written canonicalization spec with conformance vectors. Unicode confusables, symlink and path-traversal equivalence are not handled.
+- **Prior art is not a deployment study.** Four mechanisms were generalised from a single-operator scheduler whose only user is its author.
 
 ## Prior art and case study
 
